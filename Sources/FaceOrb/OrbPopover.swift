@@ -252,7 +252,7 @@ struct HomeTab: View {
                 }
             }
             HStack {
-            TextField("Pixieset link", text: $link)
+            TextField("Album or photo link", text: $link)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(importLink)
             Button("Import", action: importLink)
@@ -347,7 +347,7 @@ struct HomeTab: View {
 
     private func importLink() {
         guard !link.isEmpty, !model.activity.isBusy else { return }
-        model.importPixieset(link)
+        model.importLink(link)
         link = ""
     }
 

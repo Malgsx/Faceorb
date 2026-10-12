@@ -150,25 +150,39 @@ final class AppModel: ObservableObject {
         activity = .idle
     }
 
-    func importPixieset(_ link: String) {
+    /// Imports from a link: a Pixieset gallery, a web page with photos, an image, or a .zip.
+    func importLink(_ link: String) {
         guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme?.hasPrefix("http") == true else {
-            lastError = "Paste a full Pixieset link, like https://pixies.et/…"
+            lastError = "Paste a full link, starting with https://"
             return
         }
         lastError = nil
         work = Task {
             do {
-                let client = PixiesetClient()
-                let gallery = try await client.resolve(url)
-                // ~400 KB per web-size photo; refuse rather than fill the disk.
-                try DiskCheck.preflight(folder: store.albumFolder(for: gallery.source), needed: Int64(gallery.photos.count) * 450_000)
-                activity = .importing(done: 0, total: gallery.photos.count)
-                let photos = try await client.download(gallery, to: store.albumFolder(for: gallery.source)) { done, total in
+                let progress: @Sendable (Int, Int) -> Void = { done, total in
                     Task { @MainActor in
                         if case .importing = self.activity { self.activity = .importing(done: done, total: total) }
                     }
                 }
-                addPhotos(photos, source: gallery.source, title: gallery.title, origin: AlbumOrigin(link: url.absoluteString))
+                let links = LinkImporter()
+                let album = try await links.resolve(url)
+                let photos: [Photo], source: String, title: String
+                if case .pixieset = album.content {
+                    let client = PixiesetClient()
+                    let gallery = try await client.resolve(url)
+                    // ~400 KB per web-size photo; refuse rather than fill the disk.
+                    try DiskCheck.preflight(folder: store.albumFolder(for: gallery.source), needed: Int64(gallery.photos.count) * 450_000)
+                    activity = .importing(done: 0, total: gallery.photos.count)
+                    photos = try await client.download(gallery, to: store.albumFolder(for: gallery.source), progress: progress)
+                    (source, title) = (gallery.source, gallery.title)
+                } else {
+                    try DiskCheck.preflight(folder: store.albumFolder(for: album.source), needed: album.estimatedBytes)
+                    activity = .importing(done: 0, total: 1)
+                    photos = try await links.download(album, to: store.albumFolder(for: album.source), progress: progress)
+                    (source, title) = (album.source, album.title)
+                }
+                guard !photos.isEmpty else { throw LinkImporter.ImportError.noPhotos }
+                addPhotos(photos, source: source, title: title, origin: AlbumOrigin(link: url.absoluteString))
                 await analyzePending()
             } catch is CancellationError {
             } catch {
@@ -215,7 +229,7 @@ final class AppModel: ObservableObject {
         var title: String
         /// The folder a folder import came from.
         var folder: URL?
-        /// The Pixieset link, when it was recorded (imports from before this was kept have none).
+        /// The album link, when it was recorded (imports from before this was kept have none).
         var link: URL?
         var importedAt: Date?
         var photoCount: Int
@@ -242,8 +256,8 @@ final class AppModel: ObservableObject {
         .sorted { ($0.importedAt ?? .distantPast, $1.title) > ($1.importedAt ?? .distantPast, $0.title) }
     }
 
-    /// Opens where an album came from: its folder in Finder, or its Pixieset page in the browser.
-    /// Older Pixieset imports have no saved link, so their downloaded copies are shown instead.
+    /// Opens where an album came from: its folder in Finder, or its web page in the browser.
+    /// Older link imports have no saved link, so their downloaded copies are shown instead.
     func openAlbum(_ row: AlbumRow) {
         if let folder = row.folder {
             guard row.available else { lastError = "\(row.title) has been moved or deleted."; return }
@@ -255,7 +269,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Shows FaceOrb's own downloaded copies of a Pixieset album in Finder.
+    /// Shows FaceOrb's own downloaded copies of a linked album in Finder.
     func revealAlbumCopies(_ row: AlbumRow) {
         let folder = row.folder ?? store.albumFolder(for: row.source)
         guard FileManager.default.fileExists(atPath: folder.path) else { lastError = "No copies of \(row.title) on this Mac."; return }
@@ -269,7 +283,7 @@ final class AppModel: ObservableObject {
             guard row.available else { lastError = "\(row.title) has been moved or deleted."; return }
             importFolder(folder)
         } else if let link = row.link {
-            importPixieset(link.absoluteString)
+            importLink(link.absoluteString)
         }
     }
 

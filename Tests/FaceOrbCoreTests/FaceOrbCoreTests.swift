@@ -369,3 +369,49 @@ final class ExportTests: XCTestCase {
         }
     }
 }
+
+final class LinkImportTests: XCTestCase {
+    let base = URL(string: "https://example.com/album/")!
+
+    func testGalleryPrefersFullSizeLinksAndKeepsShownImagesAsFallback() {
+        let html = """
+        <img src="logo.svg"><img src="data:image/png;base64,AA">
+        <a href="full/1.jpg"><img src="thumbs/1.jpg"></a>
+        <a href='/full/2.JPG?v=2'><img src="thumbs/2.jpg"></a>
+        """
+        let urls = LinkImporter.imageURLs(inPage: html, base: base)
+        XCTAssertEqual(urls.primary.map(\.absoluteString),
+                       ["https://example.com/album/full/1.jpg", "https://example.com/full/2.JPG?v=2"])
+        XCTAssertEqual(urls.fallback.map(\.absoluteString),
+                       ["https://example.com/album/thumbs/1.jpg", "https://example.com/album/thumbs/2.jpg"])
+    }
+
+    func testPageWithoutLinksUsesLargestSrcsetCandidate() {
+        let html = #"<img srcset="a-small.jpg 400w, a-big.jpg 1600w" src="a-small.jpg"><img data-src="b.jpg" src="spacer.gif">"#
+        let urls = LinkImporter.imageURLs(inPage: html, base: base)
+        XCTAssertEqual(urls.primary.map(\.lastPathComponent), ["a-big.jpg", "a-small.jpg", "b.jpg"])
+        XCTAssertTrue(urls.fallback.isEmpty)
+    }
+
+    func testDropboxLinksBecomeDownloads() {
+        let url = LinkImporter.directDownloadURL(URL(string: "https://www.dropbox.com/scl/fo/abc/xyz?rlkey=k&dl=0")!)
+        XCTAssertEqual(url.absoluteString, "https://www.dropbox.com/scl/fo/abc/xyz?rlkey=k&dl=1")
+        let other = URL(string: "https://example.com/a?dl=0")!
+        XCTAssertEqual(LinkImporter.directDownloadURL(other), other)
+    }
+
+    func testRecognisesPhotoAndZipBytes() {
+        XCTAssertEqual(LinkImporter.imageExtension(for: Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 0, count: 8))), "jpg")
+        XCTAssertEqual(LinkImporter.imageExtension(for: Data([0x89, 0x50, 0x4E, 0x47] + Array(repeating: 0, count: 8))), "png")
+        XCTAssertEqual(LinkImporter.imageExtension(for: Data([0, 0, 0, 0x18] + Array("ftypheic".utf8))), "heic")
+        XCTAssertNil(LinkImporter.imageExtension(for: Data("<!doctype html>".utf8)))
+        XCTAssertTrue(LinkImporter.isZip(Data([0x50, 0x4B, 0x03, 0x04, 0])))
+    }
+
+    func testSourceIsStablePerLink() {
+        let a = URL(string: "https://example.com/album")!
+        XCTAssertEqual(LinkImporter.source(for: a), LinkImporter.source(for: a))
+        XCTAssertNotEqual(LinkImporter.source(for: a), LinkImporter.source(for: URL(string: "https://example.com/other")!))
+        XCTAssertTrue(LinkImporter.source(for: a).hasPrefix("link:"))
+    }
+}

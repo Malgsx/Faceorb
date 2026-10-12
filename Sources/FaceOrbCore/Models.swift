@@ -11,7 +11,7 @@ public struct NormRect: Codable, Hashable, Sendable {
 public struct Photo: Codable, Identifiable, Hashable, Sendable {
     public var id: String          // "<source>/<key>", stable across re-imports
     public var name: String
-    public var source: String      // e.g. "pixieset:987654321" or "folder:/Users/me/Pictures/Party"
+    public var source: String      // e.g. "pixieset:987654321", "link:3f2a9c" or "folder:/Users/me/Pictures/Party"
     public var localPath: String   // file on disk we analyse and show
     public var remoteURL: String?
     public var analyzed: Bool = false
@@ -125,7 +125,7 @@ public struct Library: Codable, Sendable {
 
 /// Where an album was imported from.
 public struct AlbumOrigin: Codable, Sendable, Equatable {
-    /// The Pixieset link as pasted (folder imports keep their path in the source id).
+    /// The link as pasted (folder imports keep their path in the source id).
     public var link: String?
     public var importedAt: Date?
     public init(link: String? = nil, importedAt: Date? = Date()) {

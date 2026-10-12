@@ -140,7 +140,7 @@ button.primary kbd{color:var(--ink)}
     <button id="stop" hidden>Stop</button>
   </div>
   <form class="import" id="importForm">
-    <input type="text" id="link" placeholder="Paste a Pixieset link" autocomplete="off">
+    <input type="text" id="link" placeholder="Paste an album or photo link" autocomplete="off">
     <button class="primary" id="importBtn">Import</button>
     <button type="button" class="link" id="folderBtn">or scan a folder on this Mac…</button>
   </form>

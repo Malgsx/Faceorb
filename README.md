@@ -1,8 +1,8 @@
 # FaceOrb
 
 FaceOrb is a macOS menu bar app that finds the photos you're in. Point it at a photo album (a
-Pixieset gallery link or a folder on your Mac), show it which face is yours, and it sorts the
-album into your photos, photos to review, and everyone else. Then you can save your photos to a
+link or a folder on your Mac), show it which face is yours, and it sorts the album into your
+photos, photos to review, and everyone else. Then you can save your photos to a
 folder.
 
 Everything runs on your Mac. No accounts, no cloud services.
@@ -39,13 +39,25 @@ bash install.sh
 ## Use
 
 1. Click the orb in the menu bar, or type `faceorb` in a new Terminal window.
-2. Paste a Pixieset gallery link and click Import, or choose a folder of photos.
+2. Paste a link and click Import, or choose a folder of photos.
 3. Wait for the scan to finish, then click "Pick yourself to start sorting" and pick your face.
 4. Go through the photos FaceOrb isn't sure about in the Review tab.
 5. Use "Save my photos" to copy your photos to a folder.
 
 The Browser button in the dropdown opens the same app in your web browser. It only listens on
 your own Mac (127.0.0.1) and needs a private key that the button passes along.
+
+## What you can import
+
+- A link to a web page with photos on it, such as a gallery or event page
+- A Pixieset gallery link, including photographers' own gallery domains
+- A direct link to a photo, or to a .zip of photos
+- A Dropbox share link to a photo, a .zip, or a folder
+- A folder on your Mac, with photos from anywhere: a camera, AirDrop, or an album you downloaded
+
+Some sites only show photos after you sign in, or load them in a way FaceOrb can't read
+(Google Photos and iCloud shared albums, for example). For those, download the album, then
+choose the folder.
 
 ## Update
 
@@ -60,7 +72,7 @@ Run the install command again.
 
 ## Privacy
 
-- Photos are only downloaded from the album link you paste. Nothing is uploaded.
+- Photos are only downloaded from the link you paste. Nothing is uploaded.
 - FaceOrb stores its data in `~/Library/Application Support/FaceOrb/`: the photo list, face
   positions, face signatures, your choices, and downloaded copies of the album.
 - Folders you import are read in place and never changed.

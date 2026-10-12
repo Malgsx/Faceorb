@@ -1,5 +1,6 @@
 // Headless harness for FaceOrbCore (runs on Linux and macOS).
 //   faceorb-sim pixieset <share-link>              list a public Pixieset gallery
+//   faceorb-sim link <url> [download-dir]          what an album link holds; downloads it when given a folder
 //   faceorb-sim match <faces.json> [cluster-index]   cluster faces, enrol one person, bucket photos
 //   faceorb-sim serve <faces.json> <album-dir> [port]   run the web app on that data (no enrolment yet)
 // faces.json comes from reference/embed_reference.py (same alignment + SFace model as the app).
@@ -11,7 +12,7 @@ struct RefFace: Decodable { var photo: String; var box: [Double]; var embedding:
 
 let args = CommandLine.arguments
 guard args.count >= 3 else {
-    print("usage: faceorb-sim pixieset <url> | match <faces.json> [cluster-index]")
+    print("usage: faceorb-sim pixieset <url> | link <url> [dir] | match <faces.json> [cluster-index]")
     exit(2)
 }
 
@@ -20,6 +21,21 @@ case "pixieset":
     let gallery = try await PixiesetClient().resolve(URL(string: args[2])!)
     print("title: \(gallery.title)\nsource: \(gallery.source)\nphotos: \(gallery.photos.count)")
     if let first = gallery.photos.first { print("first: \(first.name) -> \(first.webURL?.absoluteString ?? "-")") }
+
+case "link":
+    let importer = LinkImporter()
+    let album = try await importer.resolve(URL(string: args[2])!)
+    print("title: \(album.title)\nsource: \(album.source)")
+    switch album.content {
+    case .pixieset: print("kind: pixieset gallery")
+    case .zip: print("kind: zip")
+    case .images(let urls, let fallback): print("kind: images (\(urls.count), \(fallback.count) fallback)"); urls.prefix(5).forEach { print("  \($0.absoluteString)") }
+    }
+    if args.count > 3 {
+        let photos = try await importer.download(album, to: URL(fileURLWithPath: args[3])) { _, _ in }
+        print("downloaded: \(photos.count)")
+        photos.prefix(5).forEach { print("  \($0.name) -> \(($0.localPath as NSString).lastPathComponent)") }
+    }
 
 case "match":
     let raw = try JSONDecoder().decode([RefFace].self, from: Data(contentsOf: URL(fileURLWithPath: args[2])))

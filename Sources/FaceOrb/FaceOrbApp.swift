@@ -16,7 +16,7 @@ enum FaceOrbMain {
     }
 
     /// Never shown (FaceOrb has no menu bar), but its key equivalents make ⌘V/⌘C/⌘X/⌘A/⌘Z
-    /// work in text fields, e.g. pasting a Pixieset link, and ⌘W close the review window.
+    /// work in text fields, e.g. pasting an album link, and ⌘W close the review window.
     @MainActor private static func makeMainMenu() -> NSMenu {
         let main = NSMenu()
         let appItem = NSMenuItem()

@@ -39,7 +39,7 @@ final class AppBackend: FaceOrbBackend, @unchecked Sendable {
             case .cancel: m.cancel()
             case .importLink(let link):
                 guard !m.activity.isBusy else { return "FaceOrb is busy. Try again when it finishes." }
-                m.importPixieset(link)
+                m.importLink(link)
                 return m.lastError ?? "Importing… you can watch progress here or in the menu bar."
             case .importFolder(let path):
                 guard !m.activity.isBusy else { return "FaceOrb is busy. Try again when it finishes." }
