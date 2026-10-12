@@ -360,6 +360,36 @@ final class WebAPITests: XCTestCase {
         XCTAssertEqual(state["enrolled"] as? Bool, true, "start over keeps the user's face")
     }
 
+    func testClearPhotosCanForgetIdentityWithoutDeletingSettingsOrExports() async throws {
+        var lib = Library()
+        lib.photos = [Photo(id: "a", name: "a.jpg", source: "t", localPath: "/nonexistent")]
+        lib.references = [Reference(signature: [1, 0], positive: true, origin: .selfie)]
+        lib.settings.autoThreshold = 0.73
+        lib.exports = [ExportRecord(folder: "/saved", count: 1, date: Date())]
+        let api = WebAPI(backend: HeadlessBackend(lib: lib), token: "k")
+        api.port = 4000
+        let auth = ["host": "127.0.0.1:4000", "cookie": "faceorb=k", "x-faceorb": "1"]
+        let body = #"{"confirm":true,"keepMe":false}"#
+        var r = await api.handle(request("/api/clear-photos", method: "POST",
+            headers: ["host": "127.0.0.1:4000", "cookie": "faceorb=k"], body: body))
+        XCTAssertEqual(r.status, 403)
+        var snapshot = await api.backend.snapshot()
+        XCTAssertEqual(snapshot.lib.photos.count, 1)
+        XCTAssertEqual(snapshot.lib.references.count, 1)
+        r = await api.handle(request("/api/clear-photos", method: "POST", headers: auth, body: "{}"))
+        XCTAssertEqual(r.status, 400)
+        snapshot = await api.backend.snapshot()
+        XCTAssertEqual(snapshot.lib.photos.count, 1)
+        XCTAssertEqual(snapshot.lib.references.count, 1)
+        r = await api.handle(request("/api/clear-photos", method: "POST", headers: auth, body: body))
+        XCTAssertEqual(r.status, 200)
+        snapshot = await api.backend.snapshot()
+        XCTAssertTrue(snapshot.lib.photos.isEmpty)
+        XCTAssertTrue(snapshot.lib.references.isEmpty)
+        XCTAssertEqual(snapshot.lib.settings.autoThreshold, 0.73)
+        XCTAssertEqual(snapshot.lib.exports, lib.exports)
+    }
+
     func testServerRoundTrip() async throws {
         let api = WebAPI(backend: HeadlessBackend(lib: Library()), token: "tok")
         let server = HTTPServer { await api.handle($0) }

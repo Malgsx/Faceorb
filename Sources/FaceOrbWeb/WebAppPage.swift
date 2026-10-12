@@ -53,8 +53,11 @@ header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:16px;back
 .status{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bar{height:4px;background:var(--chip);border-radius:2px;margin-top:6px;overflow:hidden}
 .bar>i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
-.import{display:flex;gap:8px;flex:1 1 360px;flex-wrap:wrap;align-items:center}
+.import-group{flex:1 1 360px;min-width:0}
+.import{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .import input{flex:1 1 200px}
+.import-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
+#restartPanel input[type=checkbox]{width:auto;flex:none}
 nav{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}
 .topbar{position:sticky;top:0;z-index:5}
 nav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;white-space:nowrap;color:var(--muted)}
@@ -144,8 +147,9 @@ body.device-saving .bulk{display:none}
   .brand{flex-basis:100%;gap:12px}
   .status{white-space:normal;font-size:13px}
   .orb{width:44px;height:44px}
-  .import{display:grid;grid-template-columns:minmax(0,1fr) auto;flex-basis:100%}
-  .import .link{grid-column:1/-1;text-align:left}
+  .import-group{flex-basis:100%}
+  .import{display:grid;grid-template-columns:minmax(0,1fr) auto}
+  .import-actions .link{text-align:left}
   .topbar{top:env(safe-area-inset-top,0px)}
   nav{display:block;padding:6px max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left));overflow:visible}
   .photo-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
@@ -202,16 +206,21 @@ body.device-saving .bulk{display:none}
     </div>
     <button id="stop" hidden>Stop</button>
   </div>
-  <form class="import" id="importForm">
-    <input type="text" id="link" aria-label="Album or photo link" placeholder="Paste an album or photo link" autocomplete="off" inputmode="url" autocapitalize="none" spellcheck="false">
-    <button class="primary" id="importBtn">Import</button>
-    <button type="button" class="link" id="folderBtn">or scan a folder on this Mac…</button>
-  </form>
-  <form class="import" id="folderForm" hidden>
-    <input type="text" id="folder" aria-label="Folder on this Mac" placeholder="/Users/you/Pictures/Party" autocomplete="off" autocapitalize="none" spellcheck="false">
-    <button class="primary">Scan folder</button>
-    <button type="button" class="link" id="folderCancel">Cancel</button>
-  </form>
+  <div class="import-group">
+    <form class="import" id="importForm">
+      <input type="text" id="link" aria-label="Album or photo link" placeholder="Paste an album or photo link" autocomplete="off" inputmode="url" autocapitalize="none" spellcheck="false">
+      <button class="primary" id="importBtn">Import</button>
+    </form>
+    <form class="import" id="folderForm" hidden>
+      <input type="text" id="folder" aria-label="Folder on this Mac" placeholder="/Users/you/Pictures/Party" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <button class="primary">Scan folder</button>
+    </form>
+    <div class="import-actions">
+      <button type="button" class="link" id="folderBtn">or scan a folder on this Mac…</button>
+      <button type="button" class="link" id="folderCancel" hidden>Cancel</button>
+      <button type="button" class="link" id="restartBtn" aria-haspopup="dialog" aria-controls="restartPanel" hidden>Start over…</button>
+    </div>
+  </div>
 </header>
 <div class="topbar">
 <nav id="nav" aria-label="Photo library">
@@ -258,6 +267,15 @@ body.device-saving .bulk{display:none}
   <p class="small" id="shareStatus" role="status"></p>
   <ul class="download-list" id="downloads"></ul>
 </section>
+<section class="panel cutoffs" id="restartPanel" role="dialog" aria-labelledby="restartTitle" aria-describedby="restartDescription" hidden>
+  <button type="button" class="x" aria-label="Close">×</button>
+  <h3 id="restartTitle">Start over with new photos?</h3>
+  <p id="restartDescription">Remove all <b id="restartCount">0</b> photos, their faces and your yes/no decisions. Downloaded copies are deleted; your own folders and saved photos aren’t touched.</p>
+  <p class="small">FaceOrb keeps your face unless you choose to forget it below.</p>
+  <label class="row"><input type="checkbox" id="forgetFaceToo"> Also forget my face (pick yourself again)</label>
+  <p class="small err" id="restartStatus" role="status"></p>
+  <div class="row"><button id="restartNo">Cancel</button><button class="danger" id="restartYes">Clear photos</button></div>
+</section>
 </div>
 <main id="main"></main>
 <div class="lb" id="lb" hidden>
@@ -279,6 +297,7 @@ const touchUI = matchMedia("(hover: none) and (pointer: coarse)");
 let picked = new Set();
 let selectionMode = false;
 let S = null, raw = "", tab = "review", sel = null, people = null, lbId = null, toastTimer = 0;
+let restarting = false, restartOpener = null;
 
 async function api(path, body) {
   const opts = body === undefined ? {} : {method:"POST", headers:{"X-FaceOrb":"1","Content-Type":"application/json"},
@@ -322,6 +341,12 @@ function render() {
     : "All sorted. " + (S.counts.mine || 0) + " photos of you.";
   $("#bar").hidden = S.fraction == null; $("#bar i").style.width = ((S.fraction || 0) * 100) + "%";
   $("#stop").hidden = !S.busy; $("#importBtn").disabled = S.busy;
+  $("#restartBtn").hidden = !n;
+  $("#restartBtn").disabled = S.busy || restarting;
+  $("#restartCount").textContent = n;
+  $("#restartYes").disabled = !n || S.busy || restarting;
+  $("#forgetFaceToo").disabled = S.busy || restarting;
+  $("#restartNo").disabled = restarting;
   for (const b of ["review","mine","others"]) $("#n-" + b).textContent = S.counts[b] || 0;
   document.querySelectorAll("nav [data-tab]").forEach(b => {
     const on = b.dataset.tab === shown();
@@ -438,7 +463,7 @@ async function renderPeople() {
     '<p class="hint" style="max-width:640px">FaceOrb grouped the faces it found into people. Click yours, or add 3 to 5 selfies instead. Only a 128-number face signature is kept, never the selfie.</p>' +
     '<div class="row"><label><button type="button" id="selfieBtn">Add selfies…</button></label>' +
     '<input type="file" id="selfies" accept="image/*" multiple hidden>' +
-    (S.enrolled ? '<button class="danger" id="startOver">Start over</button>' : "") + "</div>" +
+    (S.enrolled ? '<button class="danger" id="forgetPickedFace">Forget my face</button>' : "") + "</div>" +
     (S.stats.pending ? '<p class="hint">Still scanning ' + S.stats.pending + " photos. More people will appear.</p>" : "");
   if (!people) { $("#main").innerHTML = head + '<p class="hint">Grouping faces…</p>'; people = await api("/api/people"); }
   if (shown() !== "people") return;
@@ -452,7 +477,7 @@ async function renderPeople() {
     for (const f of e.target.files) await api("/api/selfie", f);
     await refresh(true);
   };
-  if ($("#startOver")) $("#startOver").onclick = async () => { await api("/api/forget-me", {}); people = null; refresh(true); };
+  if ($("#forgetPickedFace")) $("#forgetPickedFace").onclick = async () => { await api("/api/forget-me", {}); people = null; refresh(true); };
 }
 
 // Show just the face: scale the photo so the padded face box fills the circle.
@@ -481,12 +506,7 @@ function renderPrivacy() {
   $("#autoForget").onchange = e => api("/api/autoforget", {on: e.target.checked}).then(() => refresh());
   $("#forgetOthers").onclick = () => api("/api/forget-others", {}).then(() => refresh());
   $("#forgetMe").onclick = () => api("/api/forget-me", {}).then(() => { people = null; refresh(); });
-  $("#clearAsk").onclick = () => {
-    $("#clearRow").innerHTML = "<span>Remove all " + s.photos + " photos, their faces and decisions? FaceOrb keeps your face.</span>" +
-      '<button id="clearNo">Cancel</button><button class="danger" id="clearYes">Clear photos</button>';
-    $("#clearNo").onclick = renderPrivacy;
-    $("#clearYes").onclick = () => api("/api/clear-photos", {confirm: true, keepMe: true}).then(() => { people = null; refresh(true); });
-  };
+  $("#clearAsk").onclick = openRestartPanel;
   $("#delAsk").onclick = () => {
     $("#delRow").innerHTML = "<span>Delete every photo copy, face signature and decision?</span>" +
       '<button id="delNo">Cancel</button><button class="danger" id="delYes">Delete</button>';
@@ -600,7 +620,7 @@ $("#lb").addEventListener("touchcancel", () => { swipeStart = null; });
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && lbId) { e.preventDefault(); closeLightbox(); return; }
   if (e.key === "Escape" && !lbId && closePanels()) { e.preventDefault(); return; }
-  if (!$("#devicePanel").hidden) return;
+  if (!$("#devicePanel").hidden || !$("#restartPanel").hidden) return;
   if (e.target.matches("input,select,textarea") || e.target.isContentEditable) return;
   if (!lbId && (e.key === "Enter" || e.key === " ") && e.target.matches(".card")) {
     e.preventDefault(); sel = e.target.dataset.id;
@@ -635,8 +655,8 @@ $("#importForm").onsubmit = async e => {
   e.preventDefault(); const link = $("#link").value.trim(); if (!link) return;
   await api("/api/import", {link}); $("#link").value = ""; refresh(true);
 };
-$("#folderBtn").onclick = () => { $("#importForm").hidden = true; $("#folderForm").hidden = false; $("#folder").focus(); };
-$("#folderCancel").onclick = () => { $("#importForm").hidden = false; $("#folderForm").hidden = true; };
+$("#folderBtn").onclick = () => { $("#importForm").hidden = $("#folderBtn").hidden = true; $("#folderForm").hidden = $("#folderCancel").hidden = false; $("#folder").focus(); };
+$("#folderCancel").onclick = () => { $("#importForm").hidden = $("#folderBtn").hidden = false; $("#folderForm").hidden = $("#folderCancel").hidden = true; };
 $("#folderForm").onsubmit = async e => {
   e.preventDefault(); const path = $("#folder").value.trim(); if (!path) return;
   await api("/api/import-folder", {path}); $("#folderCancel").click(); refresh(true);
@@ -708,16 +728,54 @@ $("#shareFiles").onclick = async () => {
 };
 // The Cutoffs and Save panels drop down under the tab bar; the tab button, ×, Esc or a click elsewhere closes them.
 function closePanels() {
-  const open = !$("#cutoffs").hidden || !$("#savePanel").hidden || !$("#devicePanel").hidden;
-  $("#cutoffs").hidden = $("#savePanel").hidden = $("#devicePanel").hidden = true;
+  const restartOpen = !$("#restartPanel").hidden;
+  const open = !$("#cutoffs").hidden || !$("#savePanel").hidden || !$("#devicePanel").hidden || restartOpen;
+  $("#cutoffs").hidden = $("#savePanel").hidden = $("#devicePanel").hidden = $("#restartPanel").hidden = true;
   document.body.classList.remove("device-saving");
   shareAbort?.abort(); shareAbort = null; shareFiles = []; devicePhotos = [];
+  if (restartOpen && restartOpener?.isConnected) restartOpener.focus();
+  restartOpener = null;
   return open;
 }
+function openRestartPanel(e) {
+  if (!S.stats.photos || S.busy || restarting) return;
+  closeLightbox();
+  closePanels();
+  restartOpener = e?.currentTarget || $("#restartBtn");
+  $("#forgetFaceToo").checked = false;
+  $("#restartStatus").textContent = "";
+  $("#restartPanel").hidden = false;
+  $("#restartNo").focus();
+}
+$("#restartBtn").onclick = openRestartPanel;
+$("#restartNo").onclick = closePanels;
+$("#restartYes").onclick = async () => {
+  if (!S.stats.photos || S.busy || restarting) return;
+  const keepMe = !$("#forgetFaceToo").checked;
+  restarting = true;
+  render();
+  try {
+    const result = await api("/api/clear-photos", {confirm: true, keepMe});
+    if (!result.ok) throw new Error(result.message || "Couldn't clear the photos. Try again.");
+    closePanels();
+    picked.clear(); selectionMode = false; sel = null; people = null; tab = "review";
+    $("#folderForm").hidden = $("#folderCancel").hidden = true;
+    $("#importForm").hidden = $("#folderBtn").hidden = false;
+    $("#link").value = ""; $("#folder").value = "";
+    await refresh(true);
+    $("#link").focus();
+  } catch (e) {
+    $("#restartStatus").textContent = e.message;
+    toast(e.message, true);
+  } finally {
+    restarting = false;
+    render();
+  }
+};
 function togglePanel(id) { const show = $(id).hidden; closePanels(); $(id).hidden = !show; }
 for (const x of document.querySelectorAll(".cutoffs .x")) x.onclick = closePanels;
 document.addEventListener("mousedown", e => {
-  if (!e.target.closest(".cutoffs, #cutBtn, #saveBtn")) closePanels();
+  if (!e.target.closest(".cutoffs, #cutBtn, #saveBtn, #restartBtn")) closePanels();
 });
 function updateViewport() {
   const viewport = window.visualViewport;
