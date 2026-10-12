@@ -292,6 +292,57 @@ final class WebAPITests: XCTestCase {
         XCTAssertEqual(r.status, 403, "CSRF guard still applies")
     }
 
+    func testOriginalDownloadsStayAuthenticatedAndUseLibraryIDs() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let bytes = Data([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])
+        let photo = folder.appendingPathComponent("original.jpg")
+        try bytes.write(to: photo)
+        var lib = Library()
+        lib.photos = [
+            Photo(id: "p", name: "Party \"été\"\r\n.jpg", source: "t", localPath: photo.path),
+            Photo(id: "gone", name: "gone.jpg", source: "t", localPath: folder.appendingPathComponent("missing.jpg").path),
+        ]
+        let api = WebAPI(backend: HeadlessBackend(lib: lib), token: "k")
+        api.port = 4000
+        let auth = ["host": "127.0.0.1:4000", "cookie": "faceorb=k"]
+        var r = await api.handle(request("/download", query: ["id": "p"], headers: ["host": "127.0.0.1:4000"]))
+        XCTAssertEqual(r.status, 403)
+        r = await api.handle(request("/download", query: ["id": "p"], headers: ["host": "evil.example:4000", "cookie": "faceorb=k"]))
+        XCTAssertEqual(r.status, 403)
+        r = await api.handle(request("/download", query: ["id": "p"], headers: auth))
+        XCTAssertEqual(r.status, 200)
+        XCTAssertEqual(r.body, bytes, "original bytes, not a resized preview")
+        XCTAssertEqual(r.headers["Content-Type"], "image/jpeg")
+        XCTAssertEqual(r.headers["Cache-Control"], "no-store")
+        let disposition = try XCTUnwrap(r.headers["Content-Disposition"])
+        XCTAssertTrue(disposition.hasPrefix("attachment; filename=\""))
+        XCTAssertTrue(disposition.contains("filename*=UTF-8''"))
+        XCTAssertTrue(disposition.contains("%C3%A9"))
+        XCTAssertFalse(disposition.contains("\r"))
+        XCTAssertFalse(disposition.contains("\n"))
+        r = await api.handle(request("/download", headers: auth))
+        XCTAssertEqual(r.status, 400)
+        for id in ["gone", photo.path, "../../etc/passwd"] {
+            r = await api.handle(request("/download", query: ["id": id], headers: auth))
+            XCTAssertEqual(r.status, 404)
+        }
+    }
+
+    func testHEICDownloadRetainsOriginalFormat() async throws {
+        let photo = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).heic")
+        defer { try? FileManager.default.removeItem(at: photo) }
+        let bytes = Data("fixture, not biometric data".utf8)
+        try bytes.write(to: photo)
+        var lib = Library()
+        lib.photos = [Photo(id: "p", name: "p.heic", source: "t", localPath: photo.path)]
+        let file = await HeadlessBackend(lib: lib).download(photoID: "p")
+        XCTAssertEqual(file?.data, bytes)
+        XCTAssertEqual(file?.contentType, "image/heic")
+        XCTAssertEqual(file?.name, "p.heic")
+    }
+
     func testClearPhotosEndpoint() async throws {
         var lib = Library()
         lib.photos = ["a", "b"].map { Photo(id: $0, name: "\($0).jpg", source: "t", localPath: "/nonexistent") }

@@ -9,7 +9,36 @@ public protocol FaceOrbBackend: AnyObject, Sendable {
     func perform(_ action: BackendAction) async throws -> String?
     /// Encoded image (data, MIME type) for a photo, long side at most `maxPixel`.
     func image(photoID: String, maxPixel: Int) async -> (Data, String)?
+    /// Original photo bytes for saving to the browser's device.
+    func download(photoID: String) async -> PhotoDownload?
     func enrollSelfie(_ imageData: Data) async throws -> Bool
+}
+
+public struct PhotoDownload: Sendable {
+    public var data: Data
+    public var name: String
+    public var contentType: String
+
+    public init(data: Data, name: String, contentType: String) {
+        self.data = data; self.name = name; self.contentType = contentType
+    }
+}
+
+public extension FaceOrbBackend {
+    func download(photoID: String) async -> PhotoDownload? {
+        guard let photo = await snapshot().lib.photos.first(where: { $0.id == photoID }) else { return nil }
+        return await Task.detached(priority: .userInitiated) { () -> PhotoDownload? in
+            guard let data = FileManager.default.contents(atPath: photo.localPath) else { return nil }
+            let ext = (photo.localPath as NSString).pathExtension.lowercased()
+            let types = ["jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                         "heic": "image/heic", "heif": "image/heif", "tif": "image/tiff",
+                         "tiff": "image/tiff", "webp": "image/webp", "gif": "image/gif",
+                         "bmp": "image/bmp", "avif": "image/avif"]
+            let name = (photo.name as NSString).lastPathComponent
+            return PhotoDownload(data: data, name: name.isEmpty ? "photo.\(ext)" : name,
+                                 contentType: types[ext] ?? "application/octet-stream")
+        }.value
+    }
 }
 
 public struct BackendSnapshot: Sendable {
@@ -134,6 +163,16 @@ public final class WebAPI: @unchecked Sendable {
             let px = min(max(Int(req.query["px"] ?? "") ?? 400, 64), 2400)
             guard let (data, type) = await backend.image(photoID: id, maxPixel: px) else { return .text("not found", status: 404) }
             return HTTPServer.Response(headers: ["Content-Type": type, "Cache-Control": "private, max-age=3600"], body: data)
+        case "/download":
+            guard req.method == "GET" else { return .text("GET required", status: 400) }
+            guard let id = req.query["id"] else { return .text("id?", status: 400) }
+            guard let file = await backend.download(photoID: id) else { return .text("Photo unavailable", status: 404) }
+            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+            let name = file.name.addingPercentEncoding(withAllowedCharacters: allowed) ?? "photo"
+            let fallback = file.name.unicodeScalars.map { allowed.contains($0) ? String($0) : "_" }.joined()
+            return HTTPServer.Response(headers: ["Content-Type": file.contentType,
+                                                 "Content-Disposition": "attachment; filename=\"\(fallback)\"; filename*=UTF-8''\(name)",
+                                                 "Cache-Control": "no-store"], body: file.data)
         case "/export.csv":
             let lib = await backend.snapshot().lib
             return HTTPServer.Response(headers: ["Content-Type": "text/csv; charset=utf-8",
