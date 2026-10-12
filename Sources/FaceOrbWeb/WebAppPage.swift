@@ -69,7 +69,6 @@ kbd{font:12px ui-monospace,monospace;border:1px solid var(--line);border-bottom-
 button.primary kbd{color:var(--ink)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
 .card{position:relative;border-radius:var(--radius);overflow:hidden;background:var(--tile);aspect-ratio:1/1;border:1px solid var(--line);box-shadow:var(--shadow);outline:3px solid transparent;outline-offset:-3px;transition:transform .15s ease,box-shadow .15s ease}
-.card:hover{transform:translateY(-2px);box-shadow:0 8px 22px #0002}
 .card.b-mine{box-shadow:inset 0 -3px 0 var(--mine),var(--shadow)}
 .card.b-review{box-shadow:inset 0 -3px 0 var(--review),var(--shadow)}
 .card.b-others{box-shadow:inset 0 -3px 0 var(--others),var(--shadow)}
@@ -86,7 +85,10 @@ button.primary kbd{color:var(--ink)}
 .card .meta{position:absolute;left:8px;right:8px;bottom:8px;display:flex;align-items:center;gap:6px;min-width:0}
 .badge{font-size:12px;font-weight:600;color:#fff;background:#000a;border-radius:10px;padding:2px 8px;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card .acts{margin-left:auto;display:none;gap:6px;flex:none}
-.card:hover .acts,.card.sel .acts{display:flex}
+@media (hover:hover) and (pointer:fine){
+  .card:hover{transform:translateY(-2px);box-shadow:0 8px 22px #0002}
+  .card:hover .acts,.card.sel .acts{display:flex}
+}
 .round{width:30px;height:30px;border-radius:50%;padding:0;border:0;color:#fff;font-size:15px;line-height:30px;text-align:center;box-shadow:0 1px 4px #0006}
 .yes{background:var(--mine)}.no{background:var(--danger)}.undo{background:#555}
 .empty{text-align:center;color:var(--muted);padding:80px 20px}
@@ -160,7 +162,6 @@ body.device-saving .bulk{display:none}
   .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   .card:hover{transform:none}
   .round{width:44px;height:44px;line-height:44px}
-  .card .acts{display:none}
   .inset{width:48px;height:48px}
   .inset img{transform:scale(.75);transform-origin:top left}
   .panel{padding:16px}
