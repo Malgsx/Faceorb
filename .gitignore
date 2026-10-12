@@ -1,0 +1,7 @@
+Resources/*.onnx
+.build/
+build/
+*.xcodeproj
+.swiftpm/
+.DS_Store
+.amp/
