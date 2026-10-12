@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/faceorb-orb.svg" width="160" alt="FaceOrb logo">
+</p>
+
 # FaceOrb
 
 FaceOrb is a macOS menu bar app that finds the photos you're in. Point it at a photo album (a
