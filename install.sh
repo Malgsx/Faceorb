@@ -61,3 +61,6 @@ fi
 
 open "$DEST" --args --show
 say "Done. FaceOrb is in your menu bar (the chrome orb). Run this installer again to update."
+if [[ -f "$SOURCE/Sources/FaceOrb/PhoneAccessView.swift" ]]; then
+  say "To use it from your phone, open FaceOrb > Phone for optional private HTTPS setup. Mac-only access is the default."
+fi

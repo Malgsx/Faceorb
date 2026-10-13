@@ -40,11 +40,19 @@ final class AppModel: ObservableObject {
     /// Last photo decided from the menu bar dropdown, for its Undo button.
     @Published var lastDecided: String?
     @Published private(set) var webURL: URL?
+    @Published private(set) var phoneURL: URL?
+    @Published private(set) var phoneConnectionStatus: String?
+    @Published private(set) var checkingPhoneConnection = false
+    @Published private(set) var phoneConnectionReady = false
+    @AppStorage("phoneAccessOrigin") private var savedPhoneOrigin = ""
 
     let store: LibraryStore
     private var embedder: FaceEmbedder?
     private var work: Task<Void, Never>?
     private var webServer: HTTPServer?
+    private var webAPI: WebAPI?
+    private var phoneConfiguration: PhoneAccessConfiguration?
+    private var phoneCheck: Task<Void, Never>?
 
     static let webPort: UInt16 = 47615
     @AppStorage("webAppEnabled") var webAppEnabled = true {
@@ -80,13 +88,30 @@ final class AppModel: ObservableObject {
         do {
             api.port = try server.start(preferredPort: Self.webPort)
             webServer = server
+            webAPI = api
             webURL = api.launchURL
+            if !savedPhoneOrigin.isEmpty {
+                do {
+                    let origin = try PhoneAccessOrigin(savedPhoneOrigin)
+                    applyPhoneAccess(PhoneAccessConfiguration(origin: origin, token: try PhoneAccessCredentials.load(at: store.root)))
+                } catch {
+                    phoneConnectionStatus = "Phone access is off: \(error.localizedDescription)"
+                }
+            }
         } catch {
             lastError = "Couldn't start the web app: \(error.localizedDescription)"
         }
     }
 
     func stopWebApp() {
+        phoneCheck?.cancel()
+        checkingPhoneConnection = false
+        phoneConnectionReady = false
+        phoneConfiguration = nil
+        phoneURL = nil
+        phoneConnectionStatus = nil
+        webAPI?.configurePhoneAccess(nil)
+        webAPI = nil
         webServer?.stop()
         webServer = nil
         webURL = nil
@@ -95,6 +120,75 @@ final class AppModel: ObservableObject {
     func openWebApp() {
         if webURL == nil { startWebApp() }
         if let webURL { NSWorkspace.shared.open(webURL) }
+    }
+
+    var phoneAddress: String { savedPhoneOrigin }
+
+    func enablePhoneAccess(address: String) throws {
+        let origin = try PhoneAccessOrigin(address)
+        guard webAppEnabled, webAPI != nil else {
+            throw NSError(domain: "FaceOrb", code: 1, userInfo: [NSLocalizedDescriptionKey: "Turn on the web app in Privacy first."])
+        }
+        if let port = webURL?.port, ["127.0.0.1:\(port)", "localhost:\(port)"].contains(origin.authority) {
+            throw NSError(domain: "FaceOrb", code: 2, userInfo: [NSLocalizedDescriptionKey: "Enter the HTTPS proxy address, not FaceOrb's loopback backend address."])
+        }
+        let changed = savedPhoneOrigin != origin.url.absoluteString
+        let key = try PhoneAccessCredentials.load(at: store.root, rotate: changed)
+        savedPhoneOrigin = origin.url.absoluteString
+        applyPhoneAccess(PhoneAccessConfiguration(origin: origin, token: key))
+    }
+
+    func disablePhoneAccess() {
+        savedPhoneOrigin = ""
+        applyPhoneAccess(nil)
+        do { try PhoneAccessCredentials.remove(at: store.root) } catch {
+            phoneConnectionStatus = "Access is off, but the old key couldn't be removed: \(error.localizedDescription)"
+        }
+    }
+
+    func resetPhoneLink() throws {
+        guard let configuration = phoneConfiguration else { return }
+        let key = try PhoneAccessCredentials.load(at: store.root, rotate: true)
+        applyPhoneAccess(PhoneAccessConfiguration(origin: configuration.origin, token: key))
+    }
+
+    private func applyPhoneAccess(_ configuration: PhoneAccessConfiguration?) {
+        phoneCheck?.cancel()
+        checkingPhoneConnection = false
+        phoneConnectionReady = false
+        phoneConfiguration = configuration
+        webAPI?.configurePhoneAccess(configuration)
+        phoneURL = configuration.map { $0.origin.launchURL(token: $0.token) }
+        phoneConnectionStatus = configuration == nil ? nil : "Configured. Test the HTTPS connection before opening the link on your phone."
+    }
+
+    func testPhoneConnection() {
+        guard let configuration = phoneConfiguration, !checkingPhoneConnection else { return }
+        checkingPhoneConnection = true
+        phoneConnectionStatus = "Checking HTTPS…"
+        phoneCheck = Task {
+            let session = URLSession(configuration: .ephemeral, delegate: PhoneConnectionDelegate(), delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
+            var request = URLRequest(url: configuration.origin.url.appendingPathComponent("api/phone-status"))
+            request.timeoutInterval = 15
+            do {
+                let (data, response) = try await session.data(for: request)
+                guard !Task.isCancelled else { return }
+                let status = (try? JSONSerialization.jsonObject(with: data)) as? [String: String]
+                if (response as? HTTPURLResponse)?.statusCode == 200 && status?["instance"] == configuration.connectionID {
+                    phoneConnectionReady = true
+                    phoneConnectionStatus = "HTTPS is connected from this Mac. Connect your phone to the same private network and scan the QR code."
+                } else {
+                    phoneConnectionReady = false
+                    phoneConnectionStatus = "Couldn't reach this FaceOrb app. Check the proxy's HTTPS address, Host forwarding and backend port."
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                phoneConnectionReady = false
+                phoneConnectionStatus = "Connection failed. Check that the private network and HTTPS proxy are running, and the certificate is trusted."
+            }
+            checkingPhoneConnection = false
+        }
     }
 
     private func webToken() -> String {
@@ -473,6 +567,8 @@ final class AppModel: ObservableObject {
         cancel()
         do {
             try store.deleteEverything()
+            savedPhoneOrigin = ""
+            applyPhoneAccess(nil)
             lib = Library()
             embedder = nil
             rematch()
@@ -597,4 +693,11 @@ final class AppModel: ObservableObject {
     }
 
     func revealData() { NSWorkspace.shared.activateFileViewerSelecting([store.root]) }
+}
+
+private final class PhoneConnectionDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
 }

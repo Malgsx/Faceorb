@@ -77,12 +77,18 @@ public final class WebAPI: @unchecked Sendable {
     public let backend: FaceOrbBackend
     public let token: String
     public var port: UInt16 = 0
-    /// Extra Host values to accept (only for the headless demo behind a trusted proxy; the Mac app never sets it).
+    /// Extra Host values for the headless demo; the Mac app uses a separate phone-access policy.
     public var extraAllowedHosts: Set<String> = []
+    private let phoneLock = NSLock()
+    private var phoneAccess: PhoneAccessConfiguration?
 
     public init(backend: FaceOrbBackend, token: String) {
         self.backend = backend
         self.token = token
+    }
+
+    public func configurePhoneAccess(_ configuration: PhoneAccessConfiguration?) {
+        phoneLock.withLock { phoneAccess = configuration }
     }
 
     public static func makeToken() -> String {
@@ -116,29 +122,64 @@ public final class WebAPI: @unchecked Sendable {
     // MARK: Routing
 
     public func handle(_ req: HTTPServer.Request) async -> HTTPServer.Response {
-        guard hostAllowed(req.headers["host"]) else { return .text("Forbidden host", status: 403) }
+        let phone = phoneLock.withLock { phoneAccess }
+        var response = await handle(req, phone: phone)
+        if req.headers["host"].map({ phone?.origin.accepts(host: $0) == true }) == true || response.headers["Cache-Control"] == nil {
+            response.headers["Cache-Control"] = "no-store"
+        }
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    }
 
+    private func handle(_ req: HTTPServer.Request, phone: PhoneAccessConfiguration?) async -> HTTPServer.Response {
+        let isPhone = !hostAllowed(req.headers["host"]) && (req.headers["host"].map { phone?.origin.accepts(host: $0) == true } ?? false)
+        guard isPhone || hostAllowed(req.headers["host"]) else { return .text("Forbidden host", status: 403) }
+        // Only a locally configured proxy can deliver these hosts. Never infer trust from forwarded headers.
+        if isPhone && req.headers["x-forwarded-proto"] != "https" {
+            return .text("HTTPS proxy required", status: 403)
+        }
+        if isPhone && req.headers["tailscale-funnel-request"] != nil {
+            return .text("Public Tailscale Funnel is not supported. Use private Serve.", status: 403)
+        }
+
+        let cookieName = isPhone ? "__Host-faceorb-phone" : "faceorb"
+        let key = isPhone ? phone!.token : token
         let cookieToken = req.headers["cookie"]?.split(separator: ";")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix("faceorb=") }?.dropFirst("faceorb=".count)
-        let authorized = cookieToken.map(String.init) == token || req.query["t"] == token
+            .first { $0.hasPrefix(cookieName + "=") }?.dropFirst(cookieName.count + 1)
+        if isPhone && req.method == "GET" && req.path == "/api/phone-status" {
+            return .json(["instance": phone!.connectionID])
+        }
+        let tokenLink = (!isPhone || (req.method == "GET" && req.path == "/")) && req.query["t"] == key
+        let authorized = cookieToken.map(String.init) == key || tokenLink
         guard authorized else {
-            return .text(Self.lockedPage, status: 403, type: "text/html; charset=utf-8")
+            return .text(isPhone ? Self.phoneLockedPage : Self.lockedPage, status: 403, type: "text/html; charset=utf-8")
         }
 
         if req.method == "GET" && req.path == "/" {
             var r = HTTPServer.Response.text(WebAppPage.html, type: "text/html; charset=utf-8")
-            r.headers["Set-Cookie"] = "faceorb=\(token); Path=/; HttpOnly; SameSite=Strict"
+            r.headers["Set-Cookie"] = "\(cookieName)=\(key); Path=/; HttpOnly; SameSite=Strict" + (isPhone ? "; Secure" : "")
             r.headers["Cache-Control"] = "no-store"
+            r.headers["Referrer-Policy"] = "no-referrer"
             r.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
             if req.query["t"] != nil {   // drop the token from the address bar
-                r = HTTPServer.Response(status: 302, headers: ["Location": "/", "Set-Cookie": r.headers["Set-Cookie"]!])
+                r.status = 302
+                r.headers["Location"] = "/"
+                r.body = Data()
             }
             return r
         }
 
         if req.method == "POST" {
             guard req.headers["x-faceorb"] == "1" else { return .text("Missing header", status: 403) }
+            if isPhone {
+                guard let origin = req.headers["origin"], phone!.origin.accepts(origin: origin) else {
+                    return .text("Forbidden origin", status: 403)
+                }
+            } else if let origin = req.headers["origin"], origin != "http://\(req.headers["host"]!)" {
+                return .text("Forbidden origin", status: 403)
+            }
             return await post(req)
         }
 
@@ -286,7 +327,13 @@ public final class WebAPI: @unchecked Sendable {
     static let lockedPage = """
     <!doctype html><meta charset="utf-8"><title>FaceOrb</title>
     <body style="font:15px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
-    <h2>FaceOrb is locked</h2><p>Open the web app from the FaceOrb menu bar item (<b>Open in browser</b>). The link it opens carries a one-time key that keeps other apps and websites out.</p>
+    <h2>FaceOrb is locked</h2><p>Open the web app from the FaceOrb menu bar item (<b>Browser</b>). Its private link carries the key that keeps other apps and websites out.</p>
+    """
+
+    static let phoneLockedPage = """
+    <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FaceOrb</title>
+    <body style="font:17px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
+    <h2>Connect your phone</h2><p>On your Mac, open FaceOrb &rarr; <b>Phone</b>, then scan the private QR code or open its private link in Safari. If access was revoked, ask the Mac owner for a new link.</p>
     """
 }
 
