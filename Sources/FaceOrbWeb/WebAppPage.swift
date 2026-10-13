@@ -8,6 +8,7 @@ enum WebAppPage {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FaceOrb</title>
+\#(WebAppIcon.head)
 <style>
 :root{
   --bg:#f6f6f8;--panel:#fff;--ink:#1d1d1f;--muted:#6e6e73;--line:#e3e3e8;--chip:#f0f0f4;
@@ -495,7 +496,10 @@ function renderPrivacy() {
     '<div class="panel"><h3>What FaceOrb keeps</h3><div class="stats">' +
     [["Photos",s.photos],["Faces found",s.faces],["Face signatures",s.signatures],["Your reference faces",s.references]]
       .map(([k,v]) => '<div class="stat"><b>' + v + "</b>" + k + "</div>").join("") + "</div>" +
-    '<p class="small">Face detection (Apple Vision) and recognition (SFace) run on this Mac. This page is served only to this Mac (127.0.0.1) and needs the key from the menu bar. Nothing is uploaded.</p></div>' +
+    '<p class="small">Face detection (Apple Vision) and recognition (SFace) run on this Mac. Library access needs your private link. Optional phone access uses your configured private HTTPS connection; requested photos are sent to your device, not a cloud recognition service.</p></div>' +
+    '<div class="panel"><h3>Home Screen &amp; Shortcuts</h3>' +
+    '<p>In Safari, tap Share → Add to Home Screen. The orb icon appears automatically. Leave “Open as Web App” on for the standalone app.</p>' +
+    '<p class="small">Add the page after its private-link redirect finishes, so the address contains no key. If an older shortcut shows an F, remove it and add it again after updating FaceOrb on the Mac. FaceOrb and your private connection must stay running; this is not an offline app.</p></div>' +
     '<div class="panel"><h3>Other people\'s faces</h3><label class="row"><input type="checkbox" id="autoForget"' +
     (S.settings.forgetBystandersAutomatically ? " checked" : "") + "> Forget other people's faces after each scan</label>" +
     '<div class="row"><button id="forgetOthers"' + (S.enrolled ? "" : " disabled") + ">Forget other people's faces now</button></div>" +

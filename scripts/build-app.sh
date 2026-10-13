@@ -64,6 +64,7 @@ if [[ -n "$SOURCE_VERSION" ]]; then
   plutil -insert FaceOrbSourceVersion -string "$SOURCE_VERSION" "$APP/Contents/Info.plist"
 fi
 cp "$MODEL" "$APP/Contents/Resources/"
+cp -R "$BIN/FaceOrb_FaceOrbWeb.bundle" "$APP/Contents/Resources/"
 
 # If ONNX Runtime came in as a dynamic framework, ship it inside the bundle.
 shopt -s nullglob

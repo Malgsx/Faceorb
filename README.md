@@ -78,6 +78,20 @@ Your Mac must remain awake, FaceOrb must stay running, and the phone must be on 
 private network. This is a browser interface backed by your Mac, not an independent iOS app.
 Using the Mac's LAN IP or `127.0.0.1` directly on a physical phone will not work.
 
+#### Add the orb to your Home Screen
+
+After opening the private link in Safari and letting it redirect to the address without `?t=`,
+tap **Share → Add to Home Screen**. FaceOrb supplies its chrome-orb icon automatically,
+including for the standalone PWA. On iOS 26+, leave **Open as Web App** enabled.
+The manifest uses only the clean site root, never your private pairing key. FaceOrb still
+requires the live Mac backend; installing the PWA does not add offline photo storage or recognition.
+
+For a custom Apple Shortcut, download the [1024px chrome-orb PNG](Sources/FaceOrbWeb/Resources/faceorb-icon.png)
+from this repository in Safari and choose it when editing the shortcut's **Add to Home Screen**
+icon. Use the clean HTTPS site address, not the private pairing URL, in an **Open URLs** action.
+Do not share pairing links. An existing Home Screen shortcut may need to be removed and re-added
+to pick up the new icon. The Mac must still stay awake with FaceOrb and its private connection running.
+
 #### Option A: Tailscale private HTTPS
 
 Install [Tailscale](https://tailscale.com/download) on the Mac and iPhone, sign both into the same
