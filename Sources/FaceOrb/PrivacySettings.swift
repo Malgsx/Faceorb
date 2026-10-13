@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PrivacySettings: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var windows: AppWindows
     var showCutoffs = false
     @State private var confirmDelete = false
     @State private var confirmClear = false
@@ -22,7 +23,7 @@ struct PrivacySettings: View {
                 Text("What FaceOrb keeps")
             } footer: {
                 // Grouped-form footers right-align wrapped lines on macOS; keep it a left-aligned paragraph.
-                Text("Face detection (Apple Vision) and recognition (SFace) run on this Mac. FaceOrb never uploads photos or face data. Album downloads only fetch the web-size copies the gallery already shows.")
+                Text("Face detection (Apple Vision) and recognition (SFace) run on this Mac, not a cloud service. Optional phone access sends requested previews and photo files to your device over your configured private HTTPS connection. Album downloads only fetch the web-size copies the gallery already shows.")
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -31,8 +32,12 @@ struct PrivacySettings: View {
                 Toggle("Web app in your browser", isOn: Binding(get: { model.webAppEnabled }, set: { model.webAppEnabled = $0 }))
                 if let url = model.webURL {
                     Button("Open in browser") { model.openWebApp() }
-                    Text("Served at 127.0.0.1:\(url.port ?? 0), reachable only from this Mac, and locked with a key that only the menu bar's link carries.")
+                    Text("Served at 127.0.0.1:\(url.port ?? 0), locked with a private key. Phone access is off unless you configure a trusted HTTPS proxy.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Phone setup…") { windows.showPhoneSetup() }
+                if model.phoneURL != nil {
+                    Button("Disable phone access") { model.disablePhoneAccess() }
                 }
             } header: {
                 Text("Web app")

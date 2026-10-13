@@ -37,6 +37,7 @@ final class AppWindows: ObservableObject {
     private let model: AppModel
     private let updater: Updater
     private var window: NSWindow?
+    private var phoneWindow: NSWindow?
 
     init(model: AppModel, updater: Updater) {
         self.model = model
@@ -64,6 +65,23 @@ final class AppWindows: ObservableObject {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func showPhoneSetup() {
+        if phoneWindow == nil {
+            let controller = NSHostingController(rootView: PhoneAccessView().environmentObject(model))
+            controller.sizingOptions = []
+            let window = NSWindow(contentViewController: controller)
+            window.title = "FaceOrb — Phone setup"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.isReleasedWhenClosed = false
+            window.contentMinSize = NSSize(width: 600, height: 500)
+            window.setContentSize(NSSize(width: 640, height: 740))
+            window.center()
+            phoneWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        phoneWindow?.makeKeyAndOrderFront(nil)
     }
 }
 
