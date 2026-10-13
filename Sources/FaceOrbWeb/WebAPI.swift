@@ -9,7 +9,36 @@ public protocol FaceOrbBackend: AnyObject, Sendable {
     func perform(_ action: BackendAction) async throws -> String?
     /// Encoded image (data, MIME type) for a photo, long side at most `maxPixel`.
     func image(photoID: String, maxPixel: Int) async -> (Data, String)?
+    /// Original photo bytes for saving to the browser's device.
+    func download(photoID: String) async -> PhotoDownload?
     func enrollSelfie(_ imageData: Data) async throws -> Bool
+}
+
+public struct PhotoDownload: Sendable {
+    public var data: Data
+    public var name: String
+    public var contentType: String
+
+    public init(data: Data, name: String, contentType: String) {
+        self.data = data; self.name = name; self.contentType = contentType
+    }
+}
+
+public extension FaceOrbBackend {
+    func download(photoID: String) async -> PhotoDownload? {
+        guard let photo = await snapshot().lib.photos.first(where: { $0.id == photoID }) else { return nil }
+        return await Task.detached(priority: .userInitiated) { () -> PhotoDownload? in
+            guard let data = FileManager.default.contents(atPath: photo.localPath) else { return nil }
+            let ext = (photo.localPath as NSString).pathExtension.lowercased()
+            let types = ["jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                         "heic": "image/heic", "heif": "image/heif", "tif": "image/tiff",
+                         "tiff": "image/tiff", "webp": "image/webp", "gif": "image/gif",
+                         "bmp": "image/bmp", "avif": "image/avif"]
+            let name = (photo.name as NSString).lastPathComponent
+            return PhotoDownload(data: data, name: name.isEmpty ? "photo.\(ext)" : name,
+                                 contentType: types[ext] ?? "application/octet-stream")
+        }.value
+    }
 }
 
 public struct BackendSnapshot: Sendable {
@@ -48,12 +77,18 @@ public final class WebAPI: @unchecked Sendable {
     public let backend: FaceOrbBackend
     public let token: String
     public var port: UInt16 = 0
-    /// Extra Host values to accept (only for the headless demo behind a trusted proxy; the Mac app never sets it).
+    /// Extra Host values for the headless demo; the Mac app uses a separate phone-access policy.
     public var extraAllowedHosts: Set<String> = []
+    private let phoneLock = NSLock()
+    private var phoneAccess: PhoneAccessConfiguration?
 
     public init(backend: FaceOrbBackend, token: String) {
         self.backend = backend
         self.token = token
+    }
+
+    public func configurePhoneAccess(_ configuration: PhoneAccessConfiguration?) {
+        phoneLock.withLock { phoneAccess = configuration }
     }
 
     public static func makeToken() -> String {
@@ -87,29 +122,67 @@ public final class WebAPI: @unchecked Sendable {
     // MARK: Routing
 
     public func handle(_ req: HTTPServer.Request) async -> HTTPServer.Response {
-        guard hostAllowed(req.headers["host"]) else { return .text("Forbidden host", status: 403) }
+        let phone = phoneLock.withLock { phoneAccess }
+        var response = await handle(req, phone: phone)
+        if req.headers["host"].map({ phone?.origin.accepts(host: $0) == true }) == true || response.headers["Cache-Control"] == nil {
+            response.headers["Cache-Control"] = "no-store"
+        }
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    }
 
+    private func handle(_ req: HTTPServer.Request, phone: PhoneAccessConfiguration?) async -> HTTPServer.Response {
+        let isPhone = !hostAllowed(req.headers["host"]) && (req.headers["host"].map { phone?.origin.accepts(host: $0) == true } ?? false)
+        guard isPhone || hostAllowed(req.headers["host"]) else { return .text("Forbidden host", status: 403) }
+        // Only a locally configured proxy can deliver these hosts. Never infer trust from forwarded headers.
+        if isPhone && req.headers["x-forwarded-proto"] != "https" {
+            return .text("HTTPS proxy required", status: 403)
+        }
+        if isPhone && req.headers["tailscale-funnel-request"] != nil {
+            return .text("Public Tailscale Funnel is not supported. Use private Serve.", status: 403)
+        }
+
+        // Branding and clean PWA metadata are public; library access still requires a cookie.
+        if let icon = WebAppIcon.response(for: req) { return icon }
+
+        let cookieName = isPhone ? "__Host-faceorb-phone" : "faceorb"
+        let key = isPhone ? phone!.token : token
         let cookieToken = req.headers["cookie"]?.split(separator: ";")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { $0.hasPrefix("faceorb=") }?.dropFirst("faceorb=".count)
-        let authorized = cookieToken.map(String.init) == token || req.query["t"] == token
+            .first { $0.hasPrefix(cookieName + "=") }?.dropFirst(cookieName.count + 1)
+        if isPhone && req.method == "GET" && req.path == "/api/phone-status" {
+            return .json(["instance": phone!.connectionID])
+        }
+        let tokenLink = (!isPhone || (req.method == "GET" && req.path == "/")) && req.query["t"] == key
+        let authorized = cookieToken.map(String.init) == key || tokenLink
         guard authorized else {
-            return .text(Self.lockedPage, status: 403, type: "text/html; charset=utf-8")
+            return .text(isPhone ? Self.phoneLockedPage : Self.lockedPage, status: 403, type: "text/html; charset=utf-8")
         }
 
         if req.method == "GET" && req.path == "/" {
             var r = HTTPServer.Response.text(WebAppPage.html, type: "text/html; charset=utf-8")
-            r.headers["Set-Cookie"] = "faceorb=\(token); Path=/; HttpOnly; SameSite=Strict"
+            r.headers["Set-Cookie"] = "\(cookieName)=\(key); Path=/; HttpOnly; SameSite=Strict" + (isPhone ? "; Secure" : "")
             r.headers["Cache-Control"] = "no-store"
+            r.headers["Referrer-Policy"] = "no-referrer"
             r.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
             if req.query["t"] != nil {   // drop the token from the address bar
-                r = HTTPServer.Response(status: 302, headers: ["Location": "/", "Set-Cookie": r.headers["Set-Cookie"]!])
+                r.status = 302
+                r.headers["Location"] = "/"
+                r.body = Data()
             }
             return r
         }
 
         if req.method == "POST" {
             guard req.headers["x-faceorb"] == "1" else { return .text("Missing header", status: 403) }
+            if isPhone {
+                guard let origin = req.headers["origin"], phone!.origin.accepts(origin: origin) else {
+                    return .text("Forbidden origin", status: 403)
+                }
+            } else if let origin = req.headers["origin"], origin != "http://\(req.headers["host"]!)" {
+                return .text("Forbidden origin", status: 403)
+            }
             return await post(req)
         }
 
@@ -134,6 +207,16 @@ public final class WebAPI: @unchecked Sendable {
             let px = min(max(Int(req.query["px"] ?? "") ?? 400, 64), 2400)
             guard let (data, type) = await backend.image(photoID: id, maxPixel: px) else { return .text("not found", status: 404) }
             return HTTPServer.Response(headers: ["Content-Type": type, "Cache-Control": "private, max-age=3600"], body: data)
+        case "/download":
+            guard req.method == "GET" else { return .text("GET required", status: 400) }
+            guard let id = req.query["id"] else { return .text("id?", status: 400) }
+            guard let file = await backend.download(photoID: id) else { return .text("Photo unavailable", status: 404) }
+            let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+            let name = file.name.addingPercentEncoding(withAllowedCharacters: allowed) ?? "photo"
+            let fallback = file.name.unicodeScalars.map { allowed.contains($0) ? String($0) : "_" }.joined()
+            return HTTPServer.Response(headers: ["Content-Type": file.contentType,
+                                                 "Content-Disposition": "attachment; filename=\"\(fallback)\"; filename*=UTF-8''\(name)",
+                                                 "Cache-Control": "no-store"], body: file.data)
         case "/export.csv":
             let lib = await backend.snapshot().lib
             return HTTPServer.Response(headers: ["Content-Type": "text/csv; charset=utf-8",
@@ -246,8 +329,16 @@ public final class WebAPI: @unchecked Sendable {
 
     static let lockedPage = """
     <!doctype html><meta charset="utf-8"><title>FaceOrb</title>
+    \(WebAppIcon.head)
     <body style="font:15px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
-    <h2>FaceOrb is locked</h2><p>Open the web app from the FaceOrb menu bar item (<b>Open in browser</b>). The link it opens carries a one-time key that keeps other apps and websites out.</p>
+    <h2>FaceOrb is locked</h2><p>Open the web app from the FaceOrb menu bar item (<b>Browser</b>). Its private link carries the key that keeps other apps and websites out.</p>
+    """
+
+    static let phoneLockedPage = """
+    <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FaceOrb</title>
+    \(WebAppIcon.head)
+    <body style="font:17px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
+    <h2>Connect your phone</h2><p>On your Mac, open FaceOrb &rarr; <b>Phone</b>, then scan the private QR code or open its private link in Safari. If access was revoked, ask the Mac owner for a new link.</p>
     """
 }
 

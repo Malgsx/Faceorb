@@ -6,8 +6,9 @@ enum WebAppPage {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FaceOrb</title>
+\#(WebAppIcon.head)
 <style>
 :root{
   --bg:#f6f6f8;--panel:#fff;--ink:#1d1d1f;--muted:#6e6e73;--line:#e3e3e8;--chip:#f0f0f4;
@@ -28,6 +29,9 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.danger{color:var(--danger)}
 button.link{border:0;background:none;color:var(--accent);padding:4px 0}
 button:disabled{opacity:.45;cursor:default}
+button:focus-visible,.card:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.mobile-label{display:none}
+.photo-tabs,.app-tabs{display:contents}
 select{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 8px}
 #savePanel{width:min(420px,calc(100vw - 32px))}
 #savePanel label.row{justify-content:space-between;flex-wrap:nowrap}
@@ -50,8 +54,11 @@ header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:16px;back
 .status{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bar{height:4px;background:var(--chip);border-radius:2px;margin-top:6px;overflow:hidden}
 .bar>i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
-.import{display:flex;gap:8px;flex:1 1 360px;flex-wrap:wrap;align-items:center}
+.import-group{flex:1 1 360px;min-width:0}
+.import{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .import input{flex:1 1 200px}
+.import-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}
+#restartPanel input[type=checkbox]{width:auto;flex:none}
 nav{display:flex;gap:4px;padding:10px 16px 0;border-bottom:1px solid var(--line);background:var(--panel);overflow-x:auto}
 .topbar{position:sticky;top:0;z-index:5}
 nav button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;white-space:nowrap;color:var(--muted)}
@@ -66,7 +73,6 @@ kbd{font:12px ui-monospace,monospace;border:1px solid var(--line);border-bottom-
 button.primary kbd{color:var(--ink)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
 .card{position:relative;border-radius:var(--radius);overflow:hidden;background:var(--tile);aspect-ratio:1/1;border:1px solid var(--line);box-shadow:var(--shadow);outline:3px solid transparent;outline-offset:-3px;transition:transform .15s ease,box-shadow .15s ease}
-.card:hover{transform:translateY(-2px);box-shadow:0 8px 22px #0002}
 .card.b-mine{box-shadow:inset 0 -3px 0 var(--mine),var(--shadow)}
 .card.b-review{box-shadow:inset 0 -3px 0 var(--review),var(--shadow)}
 .card.b-others{box-shadow:inset 0 -3px 0 var(--others),var(--shadow)}
@@ -83,7 +89,10 @@ button.primary kbd{color:var(--ink)}
 .card .meta{position:absolute;left:8px;right:8px;bottom:8px;display:flex;align-items:center;gap:6px;min-width:0}
 .badge{font-size:12px;font-weight:600;color:#fff;background:#000a;border-radius:10px;padding:2px 8px;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card .acts{margin-left:auto;display:none;gap:6px;flex:none}
-.card:hover .acts,.card.sel .acts{display:flex}
+@media (hover:hover) and (pointer:fine){
+  .card:hover{transform:translateY(-2px);box-shadow:0 8px 22px #0002}
+  .card:hover .acts,.card.sel .acts{display:flex}
+}
 .round{width:30px;height:30px;border-radius:50%;padding:0;border:0;color:#fff;font-size:15px;line-height:30px;text-align:center;box-shadow:0 1px 4px #0006}
 .yes{background:var(--mine)}.no{background:var(--danger)}.undo{background:#555}
 .empty{text-align:center;color:var(--muted);padding:80px 20px}
@@ -122,8 +131,67 @@ button.primary kbd{color:var(--ink)}
 .lb .top .count{color:#aaa;font-variant-numeric:tabular-nums;white-space:nowrap}
 .lb .top .x{width:34px;height:34px;padding:0;border-radius:50%;font-size:20px;line-height:34px}
 .lb .foot{color:#ccc;text-align:center;font-size:12px;padding:0 16px 10px}
-@media (max-width:560px){.toolbar h2{font-size:18px}.panel{padding:14px}.people{gap:14px}}
+.lb-actions{display:flex;gap:8px;padding:10px 16px;justify-content:center}
+.lb-actions button{min-height:44px}
+body.lightbox-open{overflow:hidden}
+body.device-saving .bulk{display:none}
+.selection-tools{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.download-list{list-style:none;margin:12px 0;padding:0}
+.download-list a{display:block;padding:12px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px;overflow-wrap:anywhere;color:var(--accent)}
+.device-note{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--line)}
 .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:8px 16px;box-shadow:0 6px 24px #0003;z-index:30}
+@media (max-width:700px), (max-height:500px) and (pointer:coarse){
+  body{font-size:15px}
+  button,select,input[type=text]{min-height:44px}
+  input[type=text],select{font-size:16px}
+  header{padding:calc(16px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 12px max(16px,env(safe-area-inset-left));gap:12px}
+  .brand{flex-basis:100%;gap:12px}
+  .status{white-space:normal;font-size:13px}
+  .orb{width:44px;height:44px}
+  .import-group{flex-basis:100%}
+  .import{display:grid;grid-template-columns:minmax(0,1fr) auto}
+  .import-actions .link{text-align:left}
+  .topbar{top:env(safe-area-inset-top,0px)}
+  nav{display:block;padding:6px max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left));overflow:visible}
+  .photo-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+  .app-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin-top:6px}
+  nav button{padding:8px 4px;font-size:13px;min-width:0}
+  nav .n{min-width:16px;padding:0 4px;margin-left:3px;font-size:11px}
+  nav .spacer,.desktop-label{display:none}
+  .mobile-label{display:inline}
+  main{padding:16px max(12px,env(safe-area-inset-right)) calc(180px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+  .toolbar{align-items:center;gap:8px}
+  .toolbar h2{font-size:19px}
+  .toolbar .hint.shortcuts{display:none}
+  .selection-tools{width:100%;margin:0}
+  .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .card:hover{transform:none}
+  .round{width:44px;height:44px;line-height:44px}
+  .inset{width:48px;height:48px}
+  .inset img{transform:scale(.75);transform-origin:top left}
+  .panel{padding:16px}
+  .people{gap:14px;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cutoffs,#savePanel{position:fixed;top:calc(var(--viewport-top,0px) + 12px + env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));width:auto;max-height:calc(var(--viewport-height,100dvh) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));overscroll-behavior:contain}
+  .cutoffs .x{width:44px;height:44px;line-height:44px;top:6px;right:6px}
+  .cutoffs h3,.cutoffs>div:first-of-type{padding-right:44px}
+  #savePanel label.row{flex-wrap:wrap}
+  #savePanel select,#savePanel input[type=text]{width:100%;flex:1 1 100%}
+  .cutoffs input[type=range]{min-height:44px}
+  .bulk{left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));transform:none;max-width:none;gap:8px;padding:10px}
+  .bulk b{flex:1}.bulk button{flex-grow:1}
+  .toast{bottom:calc(16px + env(safe-area-inset-bottom));max-width:calc(100vw - 24px);width:max-content;overflow-wrap:anywhere}
+  .lb{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  .lb .top{padding:8px 12px;flex-wrap:wrap}
+  .lb .top .name{min-width:0}
+  .lb .top .x{width:44px;height:44px;line-height:44px}
+  .lb .stage{padding:0 8px;overflow:hidden}
+  .lb .frame img{max-width:calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));max-height:calc(100dvh - 220px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .lb .nav{top:auto;bottom:8px;transform:none;background:#0009}
+  .lb-actions{padding:10px 12px;gap:8px}
+  .lb-actions button{flex:1;padding:10px 6px}
+  .lb kbd{display:none}
+  .lb .foot{font-size:12px;padding:0 12px 12px}
+}
 .err{color:var(--review)}
 [hidden]{display:none!important}
 </style>
@@ -139,31 +207,43 @@ button.primary kbd{color:var(--ink)}
     </div>
     <button id="stop" hidden>Stop</button>
   </div>
-  <form class="import" id="importForm">
-    <input type="text" id="link" placeholder="Paste an album or photo link" autocomplete="off">
-    <button class="primary" id="importBtn">Import</button>
-    <button type="button" class="link" id="folderBtn">or scan a folder on this Mac…</button>
-  </form>
-  <form class="import" id="folderForm" hidden>
-    <input type="text" id="folder" placeholder="/Users/you/Pictures/Party" autocomplete="off">
-    <button class="primary">Scan folder</button>
-    <button type="button" class="link" id="folderCancel">Cancel</button>
-  </form>
+  <div class="import-group">
+    <form class="import" id="importForm">
+      <input type="text" id="link" aria-label="Album or photo link" placeholder="Paste an album or photo link" autocomplete="off" inputmode="url" autocapitalize="none" spellcheck="false">
+      <button class="primary" id="importBtn">Import</button>
+    </form>
+    <form class="import" id="folderForm" hidden>
+      <input type="text" id="folder" aria-label="Folder on this Mac" placeholder="/Users/you/Pictures/Party" autocomplete="off" autocapitalize="none" spellcheck="false">
+      <button class="primary">Scan folder</button>
+    </form>
+    <div class="import-actions">
+      <button type="button" class="link" id="folderBtn">or scan a folder on this Mac…</button>
+      <button type="button" class="link" id="folderCancel" hidden>Cancel</button>
+      <button type="button" class="link" id="restartBtn" aria-haspopup="dialog" aria-controls="restartPanel" hidden>Start over…</button>
+    </div>
+  </div>
 </header>
 <div class="topbar">
-<nav id="nav">
-  <button data-tab="review">Needs review<span class="n" id="n-review">0</span></button>
+<nav id="nav" aria-label="Photo library">
+  <div class="photo-tabs">
+  <button data-tab="review"><span class="desktop-label">Needs review</span><span class="mobile-label">Review</span><span class="n" id="n-review">0</span></button>
   <button data-tab="mine">My photos<span class="n" id="n-mine">0</span></button>
-  <button data-tab="others">Everyone else<span class="n" id="n-others">0</span></button>
-  <button data-tab="people">Who you are</button>
-  <button data-tab="privacy">Privacy &amp; data</button>
+  <button data-tab="others"><span class="desktop-label">Everyone else</span><span class="mobile-label">Others</span><span class="n" id="n-others">0</span></button>
+  </div>
   <span class="spacer"></span>
+  <div class="app-tabs">
+  <button data-tab="people"><span class="desktop-label">Who you are</span><span class="mobile-label">You</span></button>
+  <button data-tab="privacy"><span class="desktop-label">Privacy &amp; data</span><span class="mobile-label">Privacy</span></button>
   <button id="cutBtn">Cutoffs</button>
-  <button id="saveBtn">Save my photos</button>
+  <button id="saveBtn"><span class="desktop-label">Save my photos</span><span class="mobile-label">Save</span></button>
+  </div>
 </nav>
 <div class="panel cutoffs" id="savePanel" hidden>
   <button type="button" class="x" aria-label="Close" title="Close (Esc)">×</button>
   <h3>Save my photos</h3>
+  <div class="device-note"><button class="primary" id="deviceMine">Save to this device…</button>
+    <p class="small">Download originals or share them to Photos, Files, AirDrop, or another available app.</p></div>
+  <h3>Or save on this Mac</h3>
   <label class="row">Photos <select id="exScope"><option value="mine">My photos</option><option value="mineAndReview">My photos + Needs review</option></select></label>
   <label class="row">Format <select id="exFormat"><option value="original">Original (as downloaded)</option><option value="jpeg">JPEG</option><option value="heic">HEIC (smaller, Apple devices)</option><option value="png">PNG (lossless, large)</option><option value="tiff">TIFF (lossless, very large)</option></select></label>
   <label class="row" id="exQRow">Quality <input type="range" id="exQuality" min="50" max="100" value="90"> <span id="exQVal">90%</span></label>
@@ -180,25 +260,45 @@ button.primary kbd{color:var(--ink)}
   <div id="revLbl" style="margin-top:10px"></div><input type="range" id="rev" min="15" max="90" step="1">
   <p class="small">Scores are how closely a face matches yours. 50% is a confident match for this model.</p>
 </div>
+<section class="panel cutoffs" id="devicePanel" role="dialog" aria-labelledby="deviceTitle" hidden>
+  <button type="button" class="x" aria-label="Close">×</button>
+  <h3 id="deviceTitle">Save to this device</h3>
+  <p class="small">Download an original below. On iOS, use the share sheet to choose Photos, Save to Files, or another available destination.</p>
+  <div class="row"><button id="prepareShare">Prepare for sharing</button><button class="primary" id="shareFiles" hidden>Choose where to save…</button></div>
+  <p class="small" id="shareStatus" role="status"></p>
+  <ul class="download-list" id="downloads"></ul>
+</section>
+<section class="panel cutoffs" id="restartPanel" role="dialog" aria-labelledby="restartTitle" aria-describedby="restartDescription" hidden>
+  <button type="button" class="x" aria-label="Close">×</button>
+  <h3 id="restartTitle">Start over with new photos?</h3>
+  <p id="restartDescription">Remove all <b id="restartCount">0</b> photos, their faces and your yes/no decisions. Downloaded copies are deleted; your own folders and saved photos aren’t touched.</p>
+  <p class="small">FaceOrb keeps your face unless you choose to forget it below.</p>
+  <label class="row"><input type="checkbox" id="forgetFaceToo"> Also forget my face (pick yourself again)</label>
+  <p class="small err" id="restartStatus" role="status"></p>
+  <div class="row"><button id="restartNo">Cancel</button><button class="danger" id="restartYes">Clear photos</button></div>
+</section>
 </div>
 <main id="main"></main>
 <div class="lb" id="lb" hidden>
   <div class="top"><span class="name" id="lbName"></span><span class="count" id="lbCount"></span>
-    <button id="lbNo">Not me <kbd>R</kbd></button><button class="primary" id="lbYes">That's me <kbd>A</kbd></button>
     <button class="x" id="lbClose" title="Close (Esc)" aria-label="Close">×</button></div>
   <div class="stage"><button class="nav prev" id="lbPrev" title="Previous (←)" aria-label="Previous photo">‹</button>
     <div class="frame" id="lbFrame"><img id="lbImg" alt=""></div>
     <button class="nav next" id="lbNext" title="Next (→)" aria-label="Next photo">›</button></div>
-  <div class="foot">Yellow is the face FaceOrb thinks is you. Click a different face if it picked the wrong one. <kbd>←</kbd> <kbd>→</kbd> to browse, <kbd>Esc</kbd> to close.</div>
+  <div class="lb-actions"><button id="lbNo">Not me <kbd>R</kbd></button><button class="primary" id="lbYes">That's me <kbd>A</kbd></button><button id="lbSave">Save…</button></div>
+  <div class="foot">Yellow marks the likely match. Tap another face if needed.<span class="desktop-label"> <kbd>←</kbd> <kbd>→</kbd> to browse, <kbd>Esc</kbd> to close.</span><span class="mobile-label"> Swipe to browse.</span></div>
 </div>
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" hidden></div>
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
 const TITLES = {review:"Needs review", mine:"My photos", others:"Everyone else"};
+const touchUI = matchMedia("(hover: none) and (pointer: coarse)");
 // sel: the photo keys act from (and Shift-click ranges start at); picked: every selected photo.
 let picked = new Set();
+let selectionMode = false;
 let S = null, raw = "", tab = "review", sel = null, people = null, lbId = null, toastTimer = 0;
+let restarting = false, restartOpener = null;
 
 async function api(path, body) {
   const opts = body === undefined ? {} : {method:"POST", headers:{"X-FaceOrb":"1","Content-Type":"application/json"},
@@ -231,6 +331,7 @@ async function refresh(force) {
 }
 
 function render() {
+  renderBulk();
   $("#orb").classList.toggle("busy", S.busy);
   const n = S.stats.photos;
   $("#status").innerHTML = S.busy ? esc(S.activity)
@@ -241,8 +342,18 @@ function render() {
     : "All sorted. " + (S.counts.mine || 0) + " photos of you.";
   $("#bar").hidden = S.fraction == null; $("#bar i").style.width = ((S.fraction || 0) * 100) + "%";
   $("#stop").hidden = !S.busy; $("#importBtn").disabled = S.busy;
+  $("#restartBtn").hidden = !n;
+  $("#restartBtn").disabled = S.busy || restarting;
+  $("#restartCount").textContent = n;
+  $("#restartYes").disabled = !n || S.busy || restarting;
+  $("#forgetFaceToo").disabled = S.busy || restarting;
+  $("#restartNo").disabled = restarting;
   for (const b of ["review","mine","others"]) $("#n-" + b).textContent = S.counts[b] || 0;
-  document.querySelectorAll("nav [data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === shown()));
+  document.querySelectorAll("nav [data-tab]").forEach(b => {
+    const on = b.dataset.tab === shown();
+    b.classList.toggle("on", on);
+    if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   $("#saveBtn").disabled = !(S.counts.mine);
   if (S.freeDisk != null) {
     const gb = S.freeDisk / 1e9;
@@ -264,11 +375,18 @@ function renderGrid() {
   if (!items.some(p => p.id === sel)) sel = items.length ? items[0].id : null;
   const ids = new Set(items.map(p => p.id));
   picked = new Set([...picked].filter(id => ids.has(id)));
-  if (!picked.size && sel) picked.add(sel);
+  if (!selectionMode && !touchUI.matches && !picked.size && sel) picked.add(sel);
   const head = '<div class="toolbar"><h2>' + TITLES[tab] + '</h2><span class="hint">' + items.length + "</span>" +
-    (tab === "review" && items.length ? '<span class="hint"><kbd>A</kbd> that\'s me · <kbd>R</kbd> not me · <kbd>U</kbd> undo · <kbd>Space</kbd> full size · <kbd>⌘</kbd>/<kbd>⇧</kbd>-click to pick several</span>' : "") + "</div>";
+    (items.length ? '<div class="selection-tools"><button data-select="toggle" aria-pressed="' + selectionMode + '">' + (selectionMode ? "Done" : "Select") + '</button>' +
+      (selectionMode ? '<button data-select="all">Select all</button>' : "") +
+      '<button data-select="save"' + (picked.size ? "" : " disabled") + '>Save selected' + (picked.size ? " (" + picked.size + ")" : "") + "</button></div>" : "") +
+    (tab === "review" && items.length ? '<span class="hint shortcuts"><kbd>A</kbd> that\'s me · <kbd>R</kbd> not me · <kbd>U</kbd> undo · <kbd>Space</kbd> full size · <kbd>⌘</kbd>/<kbd>⇧</kbd>-click to pick several</span>' : "") + "</div>";
   if (!items.length) {
     renderBulk();
+    if (!S.stats.photos) {
+      $("#main").innerHTML = head + '<div class="empty"><b>Add photos to get started</b>Paste an album link above, then show FaceOrb which face is yours.</div>';
+      return;
+    }
     const msg = {review:["Nothing to review","Every photo is filed. Lower the review cutoff to double-check more."],
       mine:["No photos of you yet","Import an album and pick yourself to get started."],
       others:["No other photos","Photos without you will show up here."]}[tab];
@@ -280,7 +398,7 @@ function renderGrid() {
       : (tab !== "others" ? '<button class="round no" data-act="rejected" title="Not me (R)">✕</button>' : "") +
         (tab !== "mine" ? '<button class="round yes" data-act="approved" title="That\'s me (A)">✓</button>' : "");
     const badge = p.verdict === "approved" ? "✓ You" : p.verdict === "rejected" ? "✕ Not you" : pct(p.score);
-    return '<div class="card b-' + tab + (p.verdict ? " v-" + p.verdict : "") + (picked.has(p.id) ? " sel" : "") + '" data-id="' + esc(p.id) + '" title="' + esc(p.name) + '">' +
+    return '<div class="card b-' + tab + (p.verdict ? " v-" + p.verdict : "") + (picked.has(p.id) ? " sel" : "") + '" data-id="' + esc(p.id) + '" title="' + esc(p.name) + '" tabindex="0" role="button" aria-label="' + esc((selectionMode ? "Select " : "Open ") + p.name) + '" aria-pressed="' + picked.has(p.id) + '">' +
       '<img loading="lazy" decoding="async" src="' + img(p.id, 400) + '" alt="">' +
       (p.bestBox && p.score >= 0 && tab !== "others" ? '<div class="inset" title="The face FaceOrb matched"><img loading="lazy" decoding="async" data-d="64" data-box=\'' + JSON.stringify(p.bestBox) + '\' src="' + img(p.id, 1600) + '" alt=""></div>' : "") +
       '<div class="meta"><span class="badge">' + badge + '</span><span class="acts">' + acts + "</span></div></div>";
@@ -291,18 +409,24 @@ function renderGrid() {
 
 // Multi-select: marks the picked cards and shows the bulk bar when more than one is picked.
 function syncPicked() {
-  document.querySelectorAll(".card").forEach(c => c.classList.toggle("sel", picked.has(c.dataset.id)));
+  document.querySelectorAll(".card").forEach(c => {
+    c.classList.toggle("sel", picked.has(c.dataset.id));
+    c.setAttribute("aria-pressed", String(picked.has(c.dataset.id)));
+  });
+  const save = $('[data-select="save"]');
+  if (save) { save.disabled = !picked.size; save.textContent = "Save selected" + (picked.size ? " (" + picked.size + ")" : ""); }
   renderBulk();
 }
 function renderBulk() {
   let bar = $("#bulk");
-  const show = picked.size > 1 && !["people","privacy"].includes(tab);
+  const show = (selectionMode ? picked.size > 0 : picked.size > 1) && !["people","privacy"].includes(shown());
   document.body.classList.toggle("multi", show);
   if (!show) { if (bar) bar.remove(); return; }
   if (!bar) { bar = document.createElement("div"); bar.id = "bulk"; bar.className = "bulk"; document.body.appendChild(bar); }
   const anyDecided = S && S.photos.some(p => picked.has(p.id) && p.verdict);
   bar.innerHTML = "<b>" + picked.size + " selected</b>" +
-    '<button class="link" data-bulk="clear" title="Keep one selected (Esc)">Deselect</button>' +
+    '<button class="link" data-bulk="clear">Deselect</button>' +
+    '<button data-bulk="save">Save…</button>' +
     (anyDecided ? '<button data-bulk="undo" title="Undo (U)">↶ Undo</button>' : "") +
     '<button class="no" data-bulk="rejected" title="Not me (R)">✕ Not me</button>' +
     '<button class="yes" data-bulk="approved" title="That\'s me (A)">✓ That\'s me</button>';
@@ -310,7 +434,8 @@ function renderBulk() {
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-bulk]"); if (!b) return;
   const a = b.dataset.bulk;
-  if (a === "clear") { picked = new Set(sel ? [sel] : []); syncPicked(); }
+  if (a === "clear") { picked = new Set(!selectionMode && sel ? [sel] : []); syncPicked(); }
+  else if (a === "save") saveToDevice([...picked]);
   else if (a === "undo") undoMany();
   else decideMany(a);
 });
@@ -323,7 +448,7 @@ async function decideMany(verdict) {
   await refresh(true);
   const left = new Set(inTab().map(p => p.id));
   sel = order.slice(last + 1).find(x => left.has(x)) || [...left].pop() || null;
-  picked = new Set(sel ? [sel] : []);
+  picked = new Set(!selectionMode && !touchUI.matches && sel ? [sel] : []);
   if (tab !== "people" && tab !== "privacy") renderGrid();
   scrollToSel();
 }
@@ -339,7 +464,7 @@ async function renderPeople() {
     '<p class="hint" style="max-width:640px">FaceOrb grouped the faces it found into people. Click yours, or add 3 to 5 selfies instead. Only a 128-number face signature is kept, never the selfie.</p>' +
     '<div class="row"><label><button type="button" id="selfieBtn">Add selfies…</button></label>' +
     '<input type="file" id="selfies" accept="image/*" multiple hidden>' +
-    (S.enrolled ? '<button class="danger" id="startOver">Start over</button>' : "") + "</div>" +
+    (S.enrolled ? '<button class="danger" id="forgetPickedFace">Forget my face</button>' : "") + "</div>" +
     (S.stats.pending ? '<p class="hint">Still scanning ' + S.stats.pending + " photos. More people will appear.</p>" : "");
   if (!people) { $("#main").innerHTML = head + '<p class="hint">Grouping faces…</p>'; people = await api("/api/people"); }
   if (shown() !== "people") return;
@@ -353,7 +478,7 @@ async function renderPeople() {
     for (const f of e.target.files) await api("/api/selfie", f);
     await refresh(true);
   };
-  if ($("#startOver")) $("#startOver").onclick = async () => { await api("/api/forget-me", {}); people = null; refresh(true); };
+  if ($("#forgetPickedFace")) $("#forgetPickedFace").onclick = async () => { await api("/api/forget-me", {}); people = null; refresh(true); };
 }
 
 // Show just the face: scale the photo so the padded face box fills the circle.
@@ -371,7 +496,10 @@ function renderPrivacy() {
     '<div class="panel"><h3>What FaceOrb keeps</h3><div class="stats">' +
     [["Photos",s.photos],["Faces found",s.faces],["Face signatures",s.signatures],["Your reference faces",s.references]]
       .map(([k,v]) => '<div class="stat"><b>' + v + "</b>" + k + "</div>").join("") + "</div>" +
-    '<p class="small">Face detection (Apple Vision) and recognition (SFace) run on this Mac. This page is served only to this Mac (127.0.0.1) and needs the key from the menu bar. Nothing is uploaded.</p></div>' +
+    '<p class="small">Face detection (Apple Vision) and recognition (SFace) run on this Mac. Library access needs your private link. Optional phone access uses your configured private HTTPS connection; requested photos are sent to your device, not a cloud recognition service.</p></div>' +
+    '<div class="panel"><h3>Home Screen &amp; Shortcuts</h3>' +
+    '<p>In Safari, tap Share → Add to Home Screen. The orb icon appears automatically. Leave “Open as Web App” on for the standalone app.</p>' +
+    '<p class="small">Add the page after its private-link redirect finishes, so the address contains no key. If an older shortcut shows an F, remove it and add it again after updating FaceOrb on the Mac. FaceOrb and your private connection must stay running; this is not an offline app.</p></div>' +
     '<div class="panel"><h3>Other people\'s faces</h3><label class="row"><input type="checkbox" id="autoForget"' +
     (S.settings.forgetBystandersAutomatically ? " checked" : "") + "> Forget other people's faces after each scan</label>" +
     '<div class="row"><button id="forgetOthers"' + (S.enrolled ? "" : " disabled") + ">Forget other people's faces now</button></div>" +
@@ -382,12 +510,7 @@ function renderPrivacy() {
   $("#autoForget").onchange = e => api("/api/autoforget", {on: e.target.checked}).then(() => refresh());
   $("#forgetOthers").onclick = () => api("/api/forget-others", {}).then(() => refresh());
   $("#forgetMe").onclick = () => api("/api/forget-me", {}).then(() => { people = null; refresh(); });
-  $("#clearAsk").onclick = () => {
-    $("#clearRow").innerHTML = "<span>Remove all " + s.photos + " photos, their faces and decisions? FaceOrb keeps your face.</span>" +
-      '<button id="clearNo">Cancel</button><button class="danger" id="clearYes">Clear photos</button>';
-    $("#clearNo").onclick = renderPrivacy;
-    $("#clearYes").onclick = () => api("/api/clear-photos", {confirm: true, keepMe: true}).then(() => { people = null; refresh(true); });
-  };
+  $("#clearAsk").onclick = openRestartPanel;
   $("#delAsk").onclick = () => {
     $("#delRow").innerHTML = "<span>Delete every photo copy, face signature and decision?</span>" +
       '<button id="delNo">Cancel</button><button class="danger" id="delYes">Delete</button>';
@@ -402,7 +525,7 @@ async function decide(id, verdict, faceID) {
   await refresh(true);
   const left = new Set(inTab().map(p => p.id));
   sel = order.slice(i + 1).find(x => left.has(x)) || [...left].pop() || null;
-  picked = new Set(sel ? [sel] : []);
+  picked = new Set(!selectionMode && !touchUI.matches && sel ? [sel] : []);
   if (tab !== "people" && tab !== "privacy") renderGrid();
   scrollToSel();
   // In the full-size view, move on to the next photo instead of closing.
@@ -427,7 +550,9 @@ async function openLightbox(id) {
   $("#lbPrev").disabled = i <= 0; $("#lbNext").disabled = i < 0 || i >= items.length - 1;
   $("#lbImg").src = img(id, 1600);
   $("#lbFrame").querySelectorAll(".box").forEach(b => b.remove());
+  $("#lbImg").alt = p.name;
   $("#lb").hidden = false;
+  document.body.classList.add("lightbox-open");
   const faces = await api("/api/photo?id=" + encodeURIComponent(id));
   if (lbId !== id) return;   // moved on while the faces loaded
   for (const f of faces) {
@@ -438,7 +563,7 @@ async function openLightbox(id) {
     $("#lbFrame").appendChild(d);
   }
 }
-function closeLightbox() { $("#lb").hidden = true; lbId = null; scrollToSel(); }
+function closeLightbox() { $("#lb").hidden = true; lbId = null; document.body.classList.remove("lightbox-open"); scrollToSel(); }
 // Browse the current tab; the grid behind follows, so closing lands on the last photo viewed.
 function lbStep(d) {
   const items = inTab().map(x => x.id), i = items.indexOf(lbId), next = items[i + d];
@@ -450,15 +575,23 @@ function lbStep(d) {
 // Events
 $("#nav").addEventListener("click", e => {
   const b = e.target.closest("[data-tab]"); if (!b) return;
-  tab = b.dataset.tab; sel = null; picked = new Set(); render(); scrollTo(0, 0);
+  tab = b.dataset.tab; sel = null; picked = new Set(); selectionMode = false; closePanels(); render(); scrollTo(0, 0);
 });
 $("#main").addEventListener("click", e => {
+  const selection = e.target.closest("[data-select]");
+  if (selection) {
+    if (selection.dataset.select === "toggle") { selectionMode = !selectionMode; picked = new Set(); renderGrid(); }
+    else if (selection.dataset.select === "all") { picked = new Set(inTab().map(p => p.id)); syncPicked(); }
+    else saveToDevice([...picked]);
+    return;
+  }
   const act = e.target.closest("[data-act]"), card = e.target.closest(".card"), person = e.target.closest("[data-person]");
   if (person) { api("/api/enroll", {clusterID: person.dataset.person}).then(() => { people = null; tab = "review"; refresh(true); }); return; }
   if (!card) return;
   const id = card.dataset.id;
   if (act) { act.dataset.act === "undo" ? undo(id) : decide(id, act.dataset.act); return; }
-  if (e.metaKey || e.ctrlKey) { picked.has(id) ? picked.delete(id) : picked.add(id); sel = id; }
+  if (!selectionMode && touchUI.matches) { sel = id; openLightbox(id); return; }
+  if (selectionMode || e.metaKey || e.ctrlKey) { picked.has(id) ? picked.delete(id) : picked.add(id); sel = id; }
   else if (e.shiftKey && sel) {
     const order = inTab().map(p => p.id), i = order.indexOf(sel), j = order.indexOf(id);
     if (i >= 0 && j >= 0) order.slice(Math.min(i, j), Math.max(i, j) + 1).forEach(x => picked.add(x));
@@ -467,21 +600,43 @@ $("#main").addEventListener("click", e => {
 });
 // Shift-click shouldn't select page text.
 $("#main").addEventListener("mousedown", e => { if (e.shiftKey && e.target.closest(".card")) e.preventDefault(); });
-$("#main").addEventListener("dblclick", e => { const c = e.target.closest(".card"); if (c) openLightbox(c.dataset.id); });
+$("#main").addEventListener("dblclick", e => { const c = e.target.closest(".card"); if (c && !selectionMode && !e.target.closest("button")) openLightbox(c.dataset.id); });
 $("#lbYes").onclick = () => lbDecide("approved");
 $("#lbNo").onclick = () => lbDecide("rejected");
 $("#lbClose").onclick = closeLightbox;
 $("#lbPrev").onclick = () => lbStep(-1);
 $("#lbNext").onclick = () => lbStep(1);
+$("#lbSave").onclick = () => { const id = lbId; closeLightbox(); saveToDevice([id]); };
 $("#lb").addEventListener("click", e => { if (e.target.classList.contains("stage")) closeLightbox(); });
+let swipeStart = null;
+$("#lb").addEventListener("touchstart", e => {
+  swipeStart = e.touches.length === 1 && e.target.closest(".stage") ? {x:e.touches[0].clientX, y:e.touches[0].clientY} : null;
+}, {passive:true});
+$("#lb").addEventListener("touchend", e => {
+  if (!swipeStart || !e.changedTouches.length) return;
+  const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y;
+  swipeStart = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && !lbBusy && (!window.visualViewport || visualViewport.scale <= 1.05)) {
+    e.preventDefault(); lbStep(dx < 0 ? 1 : -1);
+  }
+}, {passive:false});
+$("#lb").addEventListener("touchcancel", () => { swipeStart = null; });
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && lbId) { e.preventDefault(); closeLightbox(); return; }
   if (e.key === "Escape" && !lbId && closePanels()) { e.preventDefault(); return; }
-  if (e.target.tagName === "INPUT") return;
+  if (!$("#devicePanel").hidden || !$("#restartPanel").hidden) return;
+  if (e.target.matches("input,select,textarea") || e.target.isContentEditable) return;
+  if (!lbId && (e.key === "Enter" || e.key === " ") && e.target.matches(".card")) {
+    e.preventDefault(); sel = e.target.dataset.id;
+    if (selectionMode) { picked.has(sel) ? picked.delete(sel) : picked.add(sel); syncPicked(); }
+    else openLightbox(sel);
+    return;
+  }
   const k = e.key.toLowerCase();
   if ((e.metaKey || e.ctrlKey) && k === "a" && !lbId && !["people","privacy"].includes(tab)) {
     e.preventDefault(); picked = new Set(inTab().map(p => p.id)); syncPicked(); return;
   }
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("button,a")) return;
   if (lbId) {
     if (k === "escape" || k === " ") { e.preventDefault(); closeLightbox(); }
     else if (k === "arrowright" || k === "arrowleft") { e.preventDefault(); lbStep(k === "arrowright" ? 1 : -1); }
@@ -504,25 +659,137 @@ $("#importForm").onsubmit = async e => {
   e.preventDefault(); const link = $("#link").value.trim(); if (!link) return;
   await api("/api/import", {link}); $("#link").value = ""; refresh(true);
 };
-$("#folderBtn").onclick = () => { $("#importForm").hidden = true; $("#folderForm").hidden = false; $("#folder").focus(); };
-$("#folderCancel").onclick = () => { $("#importForm").hidden = false; $("#folderForm").hidden = true; };
+$("#folderBtn").onclick = () => { $("#importForm").hidden = $("#folderBtn").hidden = true; $("#folderForm").hidden = $("#folderCancel").hidden = false; $("#folder").focus(); };
+$("#folderCancel").onclick = () => { $("#importForm").hidden = $("#folderBtn").hidden = false; $("#folderForm").hidden = $("#folderCancel").hidden = true; };
 $("#folderForm").onsubmit = async e => {
   e.preventDefault(); const path = $("#folder").value.trim(); if (!path) return;
   await api("/api/import-folder", {path}); $("#folderCancel").click(); refresh(true);
 };
 $("#stop").onclick = () => api("/api/cancel", {}).then(() => refresh());
 $("#csvBtn").onclick = () => { location.href = "/export.csv"; };
+let devicePhotos = [], shareFiles = [], shareAbort = null;
+function saveToDevice(ids) {
+  const wanted = new Set(ids);
+  const photos = S.photos.filter(p => wanted.has(p.id));
+  if (!photos.length) return;
+  closePanels();
+  devicePhotos = photos;
+  $("#deviceTitle").textContent = "Save " + photos.length + (photos.length === 1 ? " photo" : " photos");
+  $("#downloads").innerHTML = photos.map(p => '<li><a href="/download?id=' + encodeURIComponent(p.id) + '" download="' + esc(p.name) + '">' + esc(p.name) + "</a></li>").join("");
+  $("#prepareShare").hidden = typeof navigator.canShare !== "function" || typeof navigator.share !== "function";
+  $("#prepareShare").disabled = false;
+  $("#shareFiles").hidden = true;
+  $("#shareStatus").textContent = $("#prepareShare").hidden
+    ? "File sharing isn't available in this browser. Use the download links below."
+    : "Prepare the originals, then tap Choose where to save to open your device's share sheet.";
+  $("#devicePanel").hidden = false;
+  document.body.classList.add("device-saving");
+  $("#devicePanel .x").focus({preventScroll:true});
+}
+$("#deviceMine").onclick = () => saveToDevice(S.photos.filter(p => p.bucket === "mine").map(p => p.id));
+$("#prepareShare").onclick = async () => {
+  if (shareAbort) return;
+  const controller = new AbortController();
+  shareAbort = controller;
+  $("#prepareShare").disabled = true;
+  let bytes = 0;
+  const files = [], limit = 100 * 1024 * 1024;
+  try {
+    for (const p of devicePhotos) {
+      $("#shareStatus").textContent = "Preparing photo " + (files.length + 1) + " of " + devicePhotos.length + "…";
+      const response = await fetch("/download?id=" + encodeURIComponent(p.id), {signal:controller.signal});
+      if (!response.ok) throw new Error("Couldn't load " + p.name + ". It may have been moved or deleted.");
+      if (bytes + +(response.headers.get("Content-Length") || 0) > limit) {
+        await response.body?.cancel();
+        throw new Error("These originals are too large to share together. Select fewer photos or use the download links.");
+      }
+      const blob = await response.blob();
+      bytes += blob.size;
+      if (bytes > limit) throw new Error("Select fewer photos to share, or use the download links.");
+      files.push(new File([blob], p.name.replace(/[/\\]/g, "_"), {type:blob.type || "application/octet-stream"}));
+    }
+    if (controller.signal.aborted) return;
+    if (!navigator.canShare({files})) throw new Error("This browser can't share these files together. Try fewer photos or download them below.");
+    shareFiles = files;
+    $("#prepareShare").hidden = true;
+    $("#shareFiles").hidden = false;
+    $("#shareStatus").textContent = files.length + " originals ready. Choose where to save.";
+  } catch (e) {
+    if (!controller.signal.aborted) $("#shareStatus").textContent = e.message;
+  } finally {
+    if (shareAbort === controller) { shareAbort = null; $("#prepareShare").disabled = false; }
+  }
+};
+$("#shareFiles").onclick = async () => {
+  if (!shareFiles.length) return;
+  $("#shareFiles").disabled = true;
+  try {
+    await navigator.share({files:shareFiles});
+    closePanels();
+  } catch (e) {
+    if (e.name !== "AbortError") $("#shareStatus").textContent = "Sharing wasn't available. Use the download links below.";
+  } finally { $("#shareFiles").disabled = false; }
+};
 // The Cutoffs and Save panels drop down under the tab bar; the tab button, ×, Esc or a click elsewhere closes them.
 function closePanels() {
-  const open = !$("#cutoffs").hidden || !$("#savePanel").hidden;
-  $("#cutoffs").hidden = $("#savePanel").hidden = true;
+  const restartOpen = !$("#restartPanel").hidden;
+  const open = !$("#cutoffs").hidden || !$("#savePanel").hidden || !$("#devicePanel").hidden || restartOpen;
+  $("#cutoffs").hidden = $("#savePanel").hidden = $("#devicePanel").hidden = $("#restartPanel").hidden = true;
+  document.body.classList.remove("device-saving");
+  shareAbort?.abort(); shareAbort = null; shareFiles = []; devicePhotos = [];
+  if (restartOpen && restartOpener?.isConnected) restartOpener.focus();
+  restartOpener = null;
   return open;
 }
+function openRestartPanel(e) {
+  if (!S.stats.photos || S.busy || restarting) return;
+  closeLightbox();
+  closePanels();
+  restartOpener = e?.currentTarget || $("#restartBtn");
+  $("#forgetFaceToo").checked = false;
+  $("#restartStatus").textContent = "";
+  $("#restartPanel").hidden = false;
+  $("#restartNo").focus();
+}
+$("#restartBtn").onclick = openRestartPanel;
+$("#restartNo").onclick = closePanels;
+$("#restartYes").onclick = async () => {
+  if (!S.stats.photos || S.busy || restarting) return;
+  const keepMe = !$("#forgetFaceToo").checked;
+  restarting = true;
+  render();
+  try {
+    const result = await api("/api/clear-photos", {confirm: true, keepMe});
+    if (!result.ok) throw new Error(result.message || "Couldn't clear the photos. Try again.");
+    closePanels();
+    picked.clear(); selectionMode = false; sel = null; people = null; tab = "review";
+    $("#folderForm").hidden = $("#folderCancel").hidden = true;
+    $("#importForm").hidden = $("#folderBtn").hidden = false;
+    $("#link").value = ""; $("#folder").value = "";
+    await refresh(true);
+    $("#link").focus();
+  } catch (e) {
+    $("#restartStatus").textContent = e.message;
+    toast(e.message, true);
+  } finally {
+    restarting = false;
+    render();
+  }
+};
 function togglePanel(id) { const show = $(id).hidden; closePanels(); $(id).hidden = !show; }
 for (const x of document.querySelectorAll(".cutoffs .x")) x.onclick = closePanels;
 document.addEventListener("mousedown", e => {
-  if (!e.target.closest(".cutoffs, #cutBtn, #saveBtn")) closePanels();
+  if (!e.target.closest(".cutoffs, #cutBtn, #saveBtn, #restartBtn")) closePanels();
 });
+function updateViewport() {
+  const viewport = window.visualViewport;
+  document.documentElement.style.setProperty("--viewport-height", (viewport ? viewport.height : innerHeight) + "px");
+  document.documentElement.style.setProperty("--viewport-top", (viewport ? viewport.offsetTop : 0) + "px");
+}
+window.visualViewport?.addEventListener("resize", updateViewport);
+window.visualViewport?.addEventListener("scroll", updateViewport);
+window.addEventListener("resize", updateViewport);
+updateViewport();
 $("#saveBtn").onclick = () => togglePanel("#savePanel");
 const lossy = () => ["jpeg","heic"].includes($("#exFormat").value);
 $("#exFormat").onchange = () => { $("#exQRow").hidden = !lossy(); };

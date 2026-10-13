@@ -167,7 +167,7 @@ public final class HTTPServer: @unchecked Sendable {
     private func write(_ r: Response, to fd: Int32) {
         var head = "HTTP/1.1 \(r.status) \(Self.reason(r.status))\r\n"
         var headers = r.headers
-        headers["Content-Length"] = String(r.body.count)
+        if headers["Content-Length"] == nil { headers["Content-Length"] = String(r.body.count) }
         headers["Connection"] = "close"
         headers["X-Content-Type-Options"] = "nosniff"
         headers["Referrer-Policy"] = "no-referrer"

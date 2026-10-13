@@ -11,7 +11,7 @@ var products: [Product] = [
 var dependencies: [Package.Dependency] = []
 var targets: [Target] = [
     .target(name: "FaceOrbCore"),
-    .target(name: "FaceOrbWeb", dependencies: ["FaceOrbCore"]),
+    .target(name: "FaceOrbWeb", dependencies: ["FaceOrbCore"], resources: [.copy("Resources")]),
     .executableTarget(name: "faceorb-sim", dependencies: ["FaceOrbCore", "FaceOrbWeb"]),
     .testTarget(name: "FaceOrbCoreTests", dependencies: ["FaceOrbCore", "FaceOrbWeb"], resources: [.copy("Fixtures")]),
 ]

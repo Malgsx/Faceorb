@@ -140,6 +140,8 @@ struct OrbPopover: View {
             Button { model.openWebApp() } label: { Label("Browser", systemImage: "safari") }
                 .disabled(!model.webAppEnabled)
                 .help(model.webAppEnabled ? "Open FaceOrb in your browser (only this Mac can reach it)" : "Turn on the web app in Privacy")
+            Button { windows.showPhoneSetup() } label: { Label("Phone", systemImage: "iphone") }
+                .help("Configure secure access from your phone")
             Spacer()
             Button { windows.dropdownPinned.toggle() } label: { Image(systemName: windows.dropdownPinned ? "pin.fill" : "pin") }
                 .help(windows.dropdownPinned ? "Unpin: close when clicking other apps" : "Keep open while using other apps")
