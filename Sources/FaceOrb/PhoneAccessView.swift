@@ -87,12 +87,15 @@ struct PhoneAccessView: View {
                 Text(
                     "Approve HTTPS in Tailscale if prompted. Paste the HTTPS address it prints below. Use private Serve, never public Funnel. If Serve already hosts another app, choose a dedicated HTTPS port rather than replacing it."
                 )
+                Text("Tailscale provides a publicly trusted HTTPS certificate. No certificate installation or Certificate Trust Settings changes are needed.")
+                    .font(.callout)
                 Text(
                     "Tailscale is optional third-party networking and needs an account. HTTPS certificate issuance publishes the Mac's certificate hostname, not your photos. FaceOrb doesn't install or configure Tailscale for you."
                 )
                 .font(.caption).foregroundStyle(.secondary)
             } else {
-                Text("Run a trusted HTTPS reverse proxy on this Mac, reachable only through your private network or VPN. Use a certificate trusted by Safari on your phone.")
+                Text("Run a trusted HTTPS reverse proxy on this Mac, reachable only through your private network or VPN.")
+                Text("Use a certificate already trusted by both this Mac and Safari on your phone. FaceOrb doesn't install certificates or change trust settings.")
                 Text(
                     "Forward the site root / to \(backend). Preserve the incoming Host header and set X-Forwarded-Proto: https after terminating TLS; strip any client-supplied forwarding headers. Don't use a subpath or expose it publicly."
                 )

@@ -94,6 +94,10 @@ The setup window uses the actual FaceOrb port and detects common macOS CLI locat
 
 Approve HTTPS in Tailscale if prompted. Paste the printed `https://your-mac.your-tailnet.ts.net`
 address into FaceOrb. Keep Tailscale connected on the phone before opening the private link.
+Tailscale supplies a **publicly trusted HTTPS certificate**: you do not install certificates or
+approve macOS Certificate Trust Settings. The app and curl installer do not create or trust
+certificates, and they never bypass TLS verification. Tailscale's own installation may ask for
+ordinary VPN/network permission; enabling HTTPS is done in Tailscale, not Keychain Access.
 Use [Serve](https://tailscale.com/kb/1312/serve), **not Funnel**: Serve is tailnet-private, while
 Funnel publishes a service to the internet. FaceOrb rejects Tailscale Funnel requests.
 
@@ -109,8 +113,11 @@ logs, **not** the photo library. Avoid sensitive machine names; see
 #### Option B: Your own private HTTPS proxy
 
 Advanced users can run an HTTPS reverse proxy **on the same Mac**, reachable through a private VPN
-or trusted LAN. Its certificate must be trusted by both the Mac and iPhone; do not bypass
-certificate warnings. Forward the site root `/` to the loopback backend shown in **Phone setup**.
+or trusted LAN. Supply a certificate **already trusted** by both the Mac and iPhone—this option
+is for an existing, correctly configured HTTPS endpoint. Do not bypass certificate warnings or
+install a test certificate for FaceOrb. If the certificate isn't already trusted, use Tailscale
+or fix the proxy to use a publicly trusted certificate. Forward the site root `/` to the loopback
+backend shown in **Phone setup**.
 
 - Preserve the original `Host` header, including any nondefault HTTPS port.
 - Set `X-Forwarded-Proto: https` only after TLS termination; strip untrusted incoming forwarding
