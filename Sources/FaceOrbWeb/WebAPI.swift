@@ -143,6 +143,9 @@ public final class WebAPI: @unchecked Sendable {
             return .text("Public Tailscale Funnel is not supported. Use private Serve.", status: 403)
         }
 
+        // Branding and clean PWA metadata are public; library access still requires a cookie.
+        if let icon = WebAppIcon.response(for: req) { return icon }
+
         let cookieName = isPhone ? "__Host-faceorb-phone" : "faceorb"
         let key = isPhone ? phone!.token : token
         let cookieToken = req.headers["cookie"]?.split(separator: ";")
@@ -326,12 +329,14 @@ public final class WebAPI: @unchecked Sendable {
 
     static let lockedPage = """
     <!doctype html><meta charset="utf-8"><title>FaceOrb</title>
+    \(WebAppIcon.head)
     <body style="font:15px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
     <h2>FaceOrb is locked</h2><p>Open the web app from the FaceOrb menu bar item (<b>Browser</b>). Its private link carries the key that keeps other apps and websites out.</p>
     """
 
     static let phoneLockedPage = """
     <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FaceOrb</title>
+    \(WebAppIcon.head)
     <body style="font:17px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
     <h2>Connect your phone</h2><p>On your Mac, open FaceOrb &rarr; <b>Phone</b>, then scan the private QR code or open its private link in Safari. If access was revoked, ask the Mac owner for a new link.</p>
     """
