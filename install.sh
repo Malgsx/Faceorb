@@ -2,12 +2,21 @@
 # Installs or updates FaceOrb: fetches the source, builds it on this Mac, and puts FaceOrb.app in
 # ~/Applications. Run it again any time to update.
 #   curl -fsSL https://raw.githubusercontent.com/Malgsx/Faceorb/main/install.sh | bash
-# Optional: FACEORB_SRC (where the source lives, default ~/.faceorb), FACEORB_REPO, FACEORB_BRANCH.
+# From a clone (your fork, say), `./install.sh` builds and installs that checkout as it is,
+# and the app's Update button then follows it.
+# Optional: FACEORB_SRC (where the source lives, default ~/.faceorb), FACEORB_REPO (e.g. your fork),
+# FACEORB_BRANCH.
 set -euo pipefail
 
 REPO="${FACEORB_REPO:-https://github.com/Malgsx/Faceorb.git}"
 BRANCH="${FACEORB_BRANCH:-main}"
 SRC="${FACEORB_SRC:-$HOME/.faceorb}"
+# Run from a checkout rather than piped from curl: install that checkout, without fetching.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-/dev/null}")" 2>/dev/null && pwd || true)"
+LOCAL=0
+if [[ -z "${FACEORB_SRC:-}" && -n "$HERE" && -f "$HERE/scripts/build-app.sh" && -f "$HERE/Package.swift" ]]; then
+  SRC="$HERE"; LOCAL=1
+fi
 DEST="$HOME/Applications/FaceOrb.app"
 
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
@@ -23,7 +32,9 @@ if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find swift >/dev/null 2>&1; th
   die "Apple's Command Line Tools are needed to build FaceOrb. Finish the installer that just opened, then run this again."
 fi
 
-if [[ -d "$SRC/.git" ]]; then
+if (( LOCAL )); then
+  say "Installing from this checkout: $SRC"
+elif [[ -d "$SRC/.git" ]]; then
   say "Updating the source in $SRC"
   git -C "$SRC" fetch --depth 1 origin "$BRANCH"
   git -C "$SRC" reset --hard FETCH_HEAD
@@ -60,4 +71,8 @@ if ! grep -qs "alias faceorb=" "$RC"; then
 fi
 
 open "$DEST" --args --show
-say "Done. FaceOrb is in your menu bar (the chrome orb). Run this installer again to update."
+if (( LOCAL )); then
+  say "Done. FaceOrb is in your menu bar. Pull or edit this checkout, then use the app's Update button or run ./install.sh again."
+else
+  say "Done. FaceOrb is in your menu bar (the chrome orb). Run this installer again to update."
+fi

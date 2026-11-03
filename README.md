@@ -51,6 +51,18 @@ bash install.sh
 The Browser button in the dropdown opens the same app in your web browser. It only listens on
 your own Mac (127.0.0.1) and needs a private key that the button passes along.
 
+## On your phone
+
+1. In the dropdown, click **Phone** and turn on phone access.
+2. Scan the QR code with your phone's camera. Your phone must be on the same Wi-Fi as your Mac.
+3. Add it to your home screen: on iPhone, Share, then **Add to Home Screen**; on Android, ⋮, then
+   **Add to Home screen**. It then opens full screen like an app.
+
+Tap a photo to see it full size, swipe to go to the next one, and use the buttons at the bottom to
+say whether it's you. Your Mac does the face recognition, so it has to be on with FaceOrb running.
+The connection on your Wi-Fi isn't encrypted, so only turn phone access on at home or on other
+networks you trust. Turn it off again from the same place.
+
 ## What you can import
 
 - A link to a web page with photos on it, such as a gallery or event page
@@ -65,7 +77,16 @@ choose the folder.
 
 ## Update
 
-Run the install command again.
+Click Update when the dropdown offers it, or run the install command again.
+
+## Install your own fork
+
+Fork the repository on GitHub, then either clone it and run `./install.sh` in the clone (it
+installs that checkout, and the app's Update button follows it), or install straight from your fork:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/<you>/Faceorb/main/install.sh | FACEORB_REPO=https://github.com/<you>/Faceorb.git bash
+```
 
 ## Uninstall
 
@@ -93,7 +114,7 @@ Only use FaceOrb on photos you have permission to process.
 - Faces are compared with the ones you've confirmed as you. Each yes or no you give improves
   the next match.
 
-## Build from source
+## Build from source and contribute
 
 ```sh
 git clone https://github.com/Malgsx/Faceorb.git
@@ -101,13 +122,8 @@ cd Faceorb
 scripts/build-app.sh --open
 ```
 
-`swift test` runs the tests (needs Xcode for XCTest). The code is laid out as:
-
-- `Sources/FaceOrbCore`: matching, alignment, import, storage, export
-- `Sources/FaceOrbWeb`: the local web app
-- `Sources/FaceOrbKit`: face detection and the face model (macOS)
-- `Sources/FaceOrb`: the menu bar app
-- `Sources/faceorb-sim`: a command line harness for testing without the app
+`swift test` runs the tests (needs Xcode for XCTest on a Mac). See [CONTRIBUTING.md](CONTRIBUTING.md)
+for working from a fork, the code layout and how to open a pull request.
 
 ## License
 

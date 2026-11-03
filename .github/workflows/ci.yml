@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    name: macOS app and tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift --version
+      - name: Build the menu bar app
+        run: swift build --product FaceOrb
+      - name: Test
+        run: swift test
+      - name: Check the scripts parse
+        run: for f in install.sh scripts/*.sh .agents/setup .agents/resume; do bash -n "$f"; done
+
+  linux:
+    name: Core and web tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: apt-get update -qq && apt-get install -y -qq unzip
+      - run: swift test

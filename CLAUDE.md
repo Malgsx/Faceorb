@@ -14,6 +14,9 @@ face recognition, plus a local web app served by the same process. See README.md
 - `scripts/build-app.sh --open` builds `build/FaceOrb.app` (downloads the SFace model once, sha256-checked).
 - `swift test` runs the core and web tests (needs Xcode for XCTest).
 - `install.sh` is the curl installer: clones to ~/.faceorb, builds, installs to ~/Applications.
+  Run from a checkout (`./install.sh`), it installs that checkout without fetching.
+- On Linux (and in orbs), `swift test` covers FaceOrbCore, FaceOrbWeb and faceorb-sim; `.swift-version` pins Swift.
+- CI (`.github/workflows/ci.yml`) builds the app and tests on macOS, and tests on Linux.
 
 ## Data
 `~/Library/Application Support/FaceOrb/`: `library.json` (photos, face boxes, 128-d signatures,
