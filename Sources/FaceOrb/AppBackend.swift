@@ -15,7 +15,7 @@ final class AppBackend: FaceOrbBackend, @unchecked Sendable {
         await MainActor.run {
             guard let m = model else { return BackendSnapshot(lib: Library()) }
             return BackendSnapshot(lib: m.lib, busy: m.activity.isBusy, activity: m.activity.label,
-                                   fraction: m.activity.fraction, error: m.lastError)
+                                   fraction: m.activity.fraction, error: m.lastError, phone: m.phoneLink())
         }
     }
 
@@ -58,6 +58,9 @@ final class AppBackend: FaceOrbBackend, @unchecked Sendable {
                 guard m.lastExport != nil else { return "Nothing to delete." }
                 m.deleteLastExport()
                 return m.lastError ?? m.notice
+            case .phoneAccess(let on):
+                m.phoneAccessEnabled = on
+                return on ? "Phone access is on. Scan the code with your phone." : "Phone access is off."
             }
             return m.notice
         }

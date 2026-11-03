@@ -1,5 +1,7 @@
 import AppKit
 import CoreGraphics
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import FaceOrbCore
 import ImageIO
 
@@ -51,6 +53,19 @@ public enum Images {
             rgb[i * 3] = rgba[i * 4]; rgb[i * 3 + 1] = rgba[i * 4 + 1]; rgb[i * 3 + 2] = rgba[i * 4 + 2]
         }
         return RGBImage(width: w, height: h, pixels: rgb)
+    }
+
+    /// A QR code for `text` as PNG, with sharp modules `scale` pixels wide and the quiet zone around it.
+    public static func qrPNG(_ text: String, scale: CGFloat = 10) -> Data? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(text.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: scale, y: scale)),
+              let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        let out = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, cg, nil)
+        return CGImageDestinationFinalize(dest) ? out as Data : nil
     }
 
     /// A square-ish crop around a face, padded so hair and chin show.

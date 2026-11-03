@@ -31,7 +31,10 @@ struct PrivacySettings: View {
                 Toggle("Web app in your browser", isOn: Binding(get: { model.webAppEnabled }, set: { model.webAppEnabled = $0 }))
                 if let url = model.webURL {
                     Button("Open in browser") { model.openWebApp() }
-                    Text("Served at 127.0.0.1:\(url.port ?? 0), reachable only from this Mac, and locked with a key that only the menu bar's link carries.")
+                    Toggle("Phones on the same Wi-Fi", isOn: Binding(get: { model.phoneAccessEnabled }, set: { model.phoneAccessEnabled = $0 }))
+                    Text(model.phoneAccessEnabled
+                         ? "Served on port \(url.port ?? 0) to this Mac and to phones on your network that have the key from the Phone QR code. The connection isn't encrypted, so use it on networks you trust."
+                         : "Served at 127.0.0.1:\(url.port ?? 0), reachable only from this Mac, and locked with a key that only the menu bar's link carries.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } header: {

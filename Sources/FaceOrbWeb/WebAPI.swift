@@ -18,9 +18,21 @@ public struct BackendSnapshot: Sendable {
     public var activity: String
     public var fraction: Double?
     public var error: String?
-    public init(lib: Library, busy: Bool = false, activity: String = "Ready", fraction: Double? = nil, error: String? = nil) {
-        self.lib = lib; self.busy = busy; self.activity = activity; self.fraction = fraction; self.error = error
+    /// Nil while phone access is off.
+    public var phone: PhoneAccess?
+    public init(lib: Library, busy: Bool = false, activity: String = "Ready", fraction: Double? = nil, error: String? = nil,
+                phone: PhoneAccess? = nil) {
+        self.lib = lib; self.busy = busy; self.activity = activity; self.fraction = fraction; self.error = error; self.phone = phone
     }
+}
+
+/// How a phone on the same network reaches the web app.
+public struct PhoneAccess: Sendable {
+    /// The link (with key) to open on the phone; nil when the Mac isn't on a network.
+    public var url: String?
+    /// A QR code of `url` as PNG.
+    public var qrPNG: Data?
+    public init(url: String?, qrPNG: Data?) { self.url = url; self.qrPNG = qrPNG }
 }
 
 public enum BackendAction: Sendable {
@@ -38,11 +50,13 @@ public enum BackendAction: Sendable {
     case importFolder(String)
     case export(ExportOptions, folder: String)
     case deleteLastExport
+    /// Opens the web app to phones on the local network, or closes it again.
+    case phoneAccess(Bool)
 }
 
 /// JSON API + static web app, protected for a loopback server:
 /// - a random token (in the URL the menu bar opens, then a SameSite=Strict cookie),
-/// - a Host check against DNS rebinding,
+/// - a Host check against DNS rebinding (with phone access on, this Mac's own network addresses also pass),
 /// - a custom header on writes so other web pages can't post to it.
 public final class WebAPI: @unchecked Sendable {
     public let backend: FaceOrbBackend
@@ -50,6 +64,10 @@ public final class WebAPI: @unchecked Sendable {
     public var port: UInt16 = 0
     /// Extra Host values to accept (only for the headless demo behind a trusted proxy; the Mac app never sets it).
     public var extraAllowedHosts: Set<String> = []
+    /// Accept requests addressed to this machine's network addresses (phone access).
+    public var allowLAN = false
+    /// Network addresses `allowLAN` accepts; replaceable in tests.
+    var lanAddresses: () -> [String] = HTTPServer.lanAddresses
 
     public init(backend: FaceOrbBackend, token: String) {
         self.backend = backend
@@ -75,6 +93,7 @@ public final class WebAPI: @unchecked Sendable {
         var stats: [String: Int]
         var albums: [String: String]
         var freeDisk: Int64?
+        var phone: PhoneDTO?
         var photos: [PhotoDTO]
     }
     struct FaceDTO: Encodable { var id: String; var box: NormRect; var hasSignature: Bool }
@@ -83,11 +102,17 @@ public final class WebAPI: @unchecked Sendable {
         var photoID: String, box: NormRect
     }
     struct ActionResult: Encodable { var ok: Bool; var message: String? }
+    struct PhoneDTO: Encodable { var url: String? }
 
     // MARK: Routing
 
     public func handle(_ req: HTTPServer.Request) async -> HTTPServer.Response {
         guard hostAllowed(req.headers["host"]) else { return .text("Forbidden host", status: 403) }
+
+        // Home-screen icons hold nothing private, and phones fetch them without the key.
+        if req.method == "GET", let size = ["/icon-180.png": 180, "/icon-192.png": 192, "/icon-512.png": 512][req.path] {
+            return HTTPServer.Response(headers: ["Content-Type": "image/png", "Cache-Control": "max-age=86400"], body: AppIcon.png(size: size))
+        }
 
         let cookieToken = req.headers["cookie"]?.split(separator: ";")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -98,7 +123,8 @@ public final class WebAPI: @unchecked Sendable {
         }
 
         if req.method == "GET" && req.path == "/" {
-            var r = HTTPServer.Response.text(WebAppPage.html, type: "text/html; charset=utf-8")
+            // The manifest link carries the key, because browsers may fetch it without cookies.
+            var r = HTTPServer.Response.text(WebAppPage.html.replacingOccurrences(of: "{{TOKEN}}", with: token), type: "text/html; charset=utf-8")
             r.headers["Set-Cookie"] = "faceorb=\(token); Path=/; HttpOnly; SameSite=Strict"
             r.headers["Cache-Control"] = "no-store"
             r.headers["Content-Security-Policy"] = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'"
@@ -114,6 +140,24 @@ public final class WebAPI: @unchecked Sendable {
         }
 
         switch req.path {
+        case "/manifest.webmanifest":
+            // Installed apps start from start_url, which logs them in again with the key: home-screen
+            // apps on iOS don't share Safari's cookies.
+            let manifest: [String: Any] = [
+                "name": "FaceOrb", "short_name": "FaceOrb", "id": "/", "scope": "/",
+                "start_url": "/?t=\(token)", "display": "standalone",
+                "background_color": "#141416", "theme_color": "#141416",
+                "icons": [
+                    ["src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"],
+                    ["src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"],
+                    ["src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"],
+                ],
+            ]
+            let data = (try? JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
+            return HTTPServer.Response(headers: ["Content-Type": "application/manifest+json", "Cache-Control": "no-store"], body: data)
+        case "/qr.png":
+            guard let png = await backend.snapshot().phone?.qrPNG else { return .text("Phone access is off", status: 404) }
+            return HTTPServer.Response(headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: png)
         case "/api/state": return .json(await state())
         case "/api/photo":
             guard let id = req.query["id"] else { return .text("id?", status: 400) }
@@ -146,7 +190,8 @@ public final class WebAPI: @unchecked Sendable {
 
     private func hostAllowed(_ host: String?) -> Bool {
         guard let host else { return false }
-        return host == "127.0.0.1:\(port)" || host == "localhost:\(port)" || extraAllowedHosts.contains(host)
+        if host == "127.0.0.1:\(port)" || host == "localhost:\(port)" || extraAllowedHosts.contains(host) { return true }
+        return allowLAN && lanAddresses().contains { host == "\($0):\(port)" }
     }
 
     private func state() async -> StateDTO {
@@ -173,7 +218,8 @@ public final class WebAPI: @unchecked Sendable {
         return StateDTO(busy: snap.busy, activity: snap.activity, fraction: snap.fraction, error: snap.error,
                         enrolled: lib.references.contains(where: \.positive), counts: counts, settings: lib.settings,
                         stats: stats, albums: lib.albums,
-                        freeDisk: DiskCheck.freeBytes(at: URL(fileURLWithPath: NSHomeDirectory())), photos: photos)
+                        freeDisk: DiskCheck.freeBytes(at: URL(fileURLWithPath: NSHomeDirectory())),
+                        phone: snap.phone.map { PhoneDTO(url: $0.url) }, photos: photos)
     }
 
     private func post(_ req: HTTPServer.Request) async -> HTTPServer.Response {
@@ -229,6 +275,7 @@ public final class WebAPI: @unchecked Sendable {
                 .flatMap { try? JSONDecoder().decode(ExportOptions.self, from: $0) } ?? ExportOptions()
             action = .export(opts, folder: folder)
         case "/api/delete-last-export": action = .deleteLastExport
+        case "/api/phone-access": action = .phoneAccess(body["on"] as? Bool ?? false)
         case "/api/import":
             guard let link = str("link") else { return .text("bad request", status: 400) }
             action = .importLink(link)
@@ -245,9 +292,9 @@ public final class WebAPI: @unchecked Sendable {
     }
 
     static let lockedPage = """
-    <!doctype html><meta charset="utf-8"><title>FaceOrb</title>
+    <!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>FaceOrb</title>
     <body style="font:15px -apple-system,system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#333">
-    <h2>FaceOrb is locked</h2><p>Open the web app from the FaceOrb menu bar item (<b>Open in browser</b>). The link it opens carries a one-time key that keeps other apps and websites out.</p>
+    <h2>FaceOrb is locked</h2><p>On your Mac, open the web app from the FaceOrb menu bar item (<b>Browser</b>). On a phone, scan the QR code under <b>Phone</b> in the menu bar dropdown. Those links carry a key that keeps other apps, devices and websites out.</p>
     """
 }
 
@@ -292,7 +339,7 @@ public actor HeadlessBackend: FaceOrbBackend {
             try store?.deleteAlbumCopies()
             message = "Removed \(removed) photos."
         case .cancel: break
-        case .importLink, .importFolder, .export, .deleteLastExport:
+        case .importLink, .importFolder, .export, .deleteLastExport, .phoneAccess:
             throw NSError(domain: "FaceOrb", code: 1, userInfo: [NSLocalizedDescriptionKey: "Importing and saving photos need the Mac app."])
         }
         try store?.save(lib)

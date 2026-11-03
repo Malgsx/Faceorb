@@ -6,8 +6,17 @@ enum WebAppPage {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FaceOrb</title>
+<link rel="manifest" href="/manifest.webmanifest?t={{TOKEN}}">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="FaceOrb">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1d1d20" media="(prefers-color-scheme: dark)">
 <style>
 :root{
   --bg:#f6f6f8;--panel:#fff;--ink:#1d1d1f;--muted:#6e6e73;--line:#e3e3e8;--chip:#f0f0f4;
@@ -125,6 +134,46 @@ button.primary kbd{color:var(--ink)}
 @media (max-width:560px){.toolbar h2{font-size:18px}.panel{padding:14px}.people{gap:14px}}
 .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:8px 16px;box-shadow:0 6px 24px #0003;z-index:30}
 .err{color:var(--review)}
+.lb .choice{display:flex;gap:8px}
+#phonePanel{width:min(340px,calc(100vw - 32px))}
+#phonePanel .qr{display:block;width:220px;height:220px;margin:6px auto 10px;image-rendering:pixelated;background:#fff;padding:10px;border-radius:10px}
+#phonePanel .url{font:12px ui-monospace,monospace;word-break:break-all;color:var(--muted)}
+#phonePanel ol{margin:6px 0 8px;padding-left:20px}
+/* Installed on a phone's home screen: keep clear of the notch and the home indicator. */
+header{padding-top:max(16px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+main{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
+.lb .top{padding-top:max(10px,env(safe-area-inset-top))}
+/* Touch screens: no hover, so actions stay visible, buttons get bigger and keyboard hints go. */
+@media (hover:none){
+  .card .acts{display:flex}
+  .card:hover{transform:none}
+  .round{width:38px;height:38px;line-height:38px;font-size:17px}
+  kbd{display:none}
+  .lb .nav,.lb .foot{display:none}
+  button{min-height:36px}
+  nav button{min-height:40px}
+}
+@media (max-width:640px){
+  body{font-size:15px}
+  input[type=text],select{font-size:16px}  /* iOS zooms into smaller inputs */
+  header{gap:10px;padding:12px max(12px,env(safe-area-inset-right)) 12px max(12px,env(safe-area-inset-left));padding-top:max(12px,env(safe-area-inset-top))}
+  .brand,.import{flex-basis:100%}
+  .orb{width:40px;height:40px}
+  nav{padding:6px 8px 0;gap:0}
+  nav button{padding:8px 10px}
+  main{padding:12px 12px calc(80px + env(safe-area-inset-bottom))}
+  .grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .people{grid-template-columns:repeat(3,1fr);gap:10px}
+  .face{width:88px;height:88px}
+  .inset{width:48px;height:48px}
+  .cutoffs{position:fixed;left:12px;right:12px;width:auto!important;top:auto;bottom:calc(12px + env(safe-area-inset-bottom));max-height:70vh}
+  .bulk{bottom:calc(12px + env(safe-area-inset-bottom))}
+  .lb .stage{padding:0 8px 8px;margin-bottom:calc(70px + env(safe-area-inset-bottom))}
+  .lb .frame img{max-width:calc(100vw - 16px);max-height:calc(100vh - 190px);max-height:calc(100dvh - 190px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .lb .top{padding-left:12px;padding-right:8px}
+  .lb .choice{position:fixed;left:0;right:0;bottom:0;padding:12px 12px calc(12px + env(safe-area-inset-bottom));background:#0b0b0c;z-index:2}
+  .lb .choice button{flex:1;padding:12px;font-size:16px;font-weight:600}
+}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -158,6 +207,7 @@ button.primary kbd{color:var(--ink)}
   <button data-tab="people">Who you are</button>
   <button data-tab="privacy">Privacy &amp; data</button>
   <span class="spacer"></span>
+  <button id="phoneBtn" hidden>Phone</button>
   <button id="cutBtn">Cutoffs</button>
   <button id="saveBtn">Save my photos</button>
 </nav>
@@ -174,6 +224,21 @@ button.primary kbd{color:var(--ink)}
   <p class="small" id="exFree"></p>
   <div class="row"><button class="primary" id="exGo">Save</button><button id="csvBtn">Download list (CSV)</button><button class="link danger" id="exUndo">Delete last saved copies</button></div>
 </div>
+<div class="panel cutoffs" id="phonePanel" hidden>
+  <button type="button" class="x" aria-label="Close" title="Close (Esc)">×</button>
+  <h3>FaceOrb on your phone</h3>
+  <div id="phoneOff">
+    <p class="small">Lets phones on the same Wi-Fi open FaceOrb. They still need the key in the QR code, but the connection isn't encrypted, so only turn it on at home or on other networks you trust.</p>
+    <div class="row"><button class="primary" id="phoneOn">Turn on phone access</button></div>
+  </div>
+  <div id="phoneOnBox" hidden>
+    <img class="qr" id="phoneQR" alt="QR code for the phone link">
+    <ol class="small"><li>Scan this with your phone's camera.</li><li>Add it to your home screen: Share, then <b>Add to Home Screen</b> (iPhone), or ⋮, then <b>Add to Home screen</b> (Android).</li></ol>
+    <p class="url" id="phoneURL"></p>
+    <p class="small" id="phoneNoNet" hidden>This Mac isn't on a network right now. Connect to Wi-Fi to get a link.</p>
+    <div class="row"><button class="link danger" id="phoneOffBtn">Turn off phone access</button></div>
+  </div>
+</div>
 <div class="panel cutoffs" id="cutoffs" hidden>
   <button type="button" class="x" aria-label="Close" title="Close (Esc)">×</button>
   <div id="autoLbl"></div><input type="range" id="auto" min="30" max="90" step="1">
@@ -184,7 +249,7 @@ button.primary kbd{color:var(--ink)}
 <main id="main"></main>
 <div class="lb" id="lb" hidden>
   <div class="top"><span class="name" id="lbName"></span><span class="count" id="lbCount"></span>
-    <button id="lbNo">Not me <kbd>R</kbd></button><button class="primary" id="lbYes">That's me <kbd>A</kbd></button>
+    <span class="choice"><button id="lbNo">Not me <kbd>R</kbd></button><button class="primary" id="lbYes">That's me <kbd>A</kbd></button></span>
     <button class="x" id="lbClose" title="Close (Esc)" aria-label="Close">×</button></div>
   <div class="stage"><button class="nav prev" id="lbPrev" title="Previous (←)" aria-label="Previous photo">‹</button>
     <div class="frame" id="lbFrame"><img id="lbImg" alt=""></div>
@@ -196,6 +261,10 @@ button.primary kbd{color:var(--ink)}
 "use strict";
 const $ = s => document.querySelector(s);
 const TITLES = {review:"Needs review", mine:"My photos", others:"Everyone else"};
+// Phones and tablets: tap a photo to open it, swipe to browse.
+const touch = matchMedia("(hover: none)").matches;
+// Opened from another device (phone access) rather than this Mac's own browser.
+const remote = !["127.0.0.1", "localhost"].includes(location.hostname);
 // sel: the photo keys act from (and Shift-click ranges start at); picked: every selected photo.
 let picked = new Set();
 let S = null, raw = "", tab = "review", sel = null, people = null, lbId = null, toastTimer = 0;
@@ -244,6 +313,13 @@ function render() {
   for (const b of ["review","mine","others"]) $("#n-" + b).textContent = S.counts[b] || 0;
   document.querySelectorAll("nav [data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === shown()));
   $("#saveBtn").disabled = !(S.counts.mine);
+  $("#phoneBtn").hidden = remote;
+  $("#phoneOff").hidden = !!S.phone; $("#phoneOnBox").hidden = !S.phone;
+  if (S.phone) {
+    $("#phoneURL").textContent = S.phone.url || ""; $("#phoneNoNet").hidden = !!S.phone.url; $("#phoneQR").hidden = !S.phone.url;
+    // Reload the QR only when the link changes (e.g. on another Wi-Fi network).
+    if (S.phone.url && $("#phoneQR").dataset.url !== S.phone.url) { $("#phoneQR").dataset.url = S.phone.url; $("#phoneQR").src = "/qr.png?u=" + encodeURIComponent(S.phone.url); }
+  }
   if (S.freeDisk != null) {
     const gb = S.freeDisk / 1e9;
     $("#exFree").innerHTML = (gb < 2 ? '<span class="err">' : "<span>") + gb.toFixed(1) + " GB free on this Mac" +
@@ -266,7 +342,7 @@ function renderGrid() {
   picked = new Set([...picked].filter(id => ids.has(id)));
   if (!picked.size && sel) picked.add(sel);
   const head = '<div class="toolbar"><h2>' + TITLES[tab] + '</h2><span class="hint">' + items.length + "</span>" +
-    (tab === "review" && items.length ? '<span class="hint"><kbd>A</kbd> that\'s me · <kbd>R</kbd> not me · <kbd>U</kbd> undo · <kbd>Space</kbd> full size · <kbd>⌘</kbd>/<kbd>⇧</kbd>-click to pick several</span>' : "") + "</div>";
+    (tab === "review" && items.length && !touch ? '<span class="hint"><kbd>A</kbd> that\'s me · <kbd>R</kbd> not me · <kbd>U</kbd> undo · <kbd>Space</kbd> full size · <kbd>⌘</kbd>/<kbd>⇧</kbd>-click to pick several</span>' : "") + "</div>";
   if (!items.length) {
     renderBulk();
     const msg = {review:["Nothing to review","Every photo is filed. Lower the review cutoff to double-check more."],
@@ -371,7 +447,10 @@ function renderPrivacy() {
     '<div class="panel"><h3>What FaceOrb keeps</h3><div class="stats">' +
     [["Photos",s.photos],["Faces found",s.faces],["Face signatures",s.signatures],["Your reference faces",s.references]]
       .map(([k,v]) => '<div class="stat"><b>' + v + "</b>" + k + "</div>").join("") + "</div>" +
-    '<p class="small">Face detection (Apple Vision) and recognition (SFace) run on this Mac. This page is served only to this Mac (127.0.0.1) and needs the key from the menu bar. Nothing is uploaded.</p></div>' +
+    '<p class="small">Face detection (Apple Vision) and recognition (SFace) run on your Mac. ' +
+    (S.phone ? "Phone access is on: phones on the same network can open this page with the key in the QR code. "
+             : "This page is served only to your Mac (127.0.0.1) and needs the key from the menu bar. ") +
+    "Nothing is uploaded.</p></div>" +
     '<div class="panel"><h3>Other people\'s faces</h3><label class="row"><input type="checkbox" id="autoForget"' +
     (S.settings.forgetBystandersAutomatically ? " checked" : "") + "> Forget other people's faces after each scan</label>" +
     '<div class="row"><button id="forgetOthers"' + (S.enrolled ? "" : " disabled") + ">Forget other people's faces now</button></div>" +
@@ -458,7 +537,9 @@ $("#main").addEventListener("click", e => {
   if (!card) return;
   const id = card.dataset.id;
   if (act) { act.dataset.act === "undo" ? undo(id) : decide(id, act.dataset.act); return; }
-  if (e.metaKey || e.ctrlKey) { picked.has(id) ? picked.delete(id) : picked.add(id); sel = id; }
+  // On touch screens a tap opens the photo; while several are picked, taps add and remove.
+  if (touch && picked.size <= 1) { sel = id; picked = new Set([id]); syncPicked(); openLightbox(id); return; }
+  if (e.metaKey || e.ctrlKey || touch) { picked.has(id) ? picked.delete(id) : picked.add(id); sel = id; }
   else if (e.shiftKey && sel) {
     const order = inTab().map(p => p.id), i = order.indexOf(sel), j = order.indexOf(id);
     if (i >= 0 && j >= 0) order.slice(Math.min(i, j), Math.max(i, j) + 1).forEach(x => picked.add(x));
@@ -474,6 +555,15 @@ $("#lbClose").onclick = closeLightbox;
 $("#lbPrev").onclick = () => lbStep(-1);
 $("#lbNext").onclick = () => lbStep(1);
 $("#lb").addEventListener("click", e => { if (e.target.classList.contains("stage")) closeLightbox(); });
+// Swipe left or right to browse, down to close.
+let swipe = null;
+$("#lb").addEventListener("touchstart", e => { swipe = e.touches.length === 1 ? {x: e.touches[0].clientX, y: e.touches[0].clientY} : null; }, {passive: true});
+$("#lb").addEventListener("touchend", e => {
+  if (!swipe) return;
+  const dx = e.changedTouches[0].clientX - swipe.x, dy = e.changedTouches[0].clientY - swipe.y; swipe = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) lbStep(dx < 0 ? 1 : -1);
+  else if (dy > 90 && dy > Math.abs(dx) * 1.5) closeLightbox();
+});
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && !lbId && closePanels()) { e.preventDefault(); return; }
   if (e.target.tagName === "INPUT") return;
@@ -514,14 +604,14 @@ $("#stop").onclick = () => api("/api/cancel", {}).then(() => refresh());
 $("#csvBtn").onclick = () => { location.href = "/export.csv"; };
 // The Cutoffs and Save panels drop down under the tab bar; the tab button, ×, Esc or a click elsewhere closes them.
 function closePanels() {
-  const open = !$("#cutoffs").hidden || !$("#savePanel").hidden;
-  $("#cutoffs").hidden = $("#savePanel").hidden = true;
+  const open = !$("#cutoffs").hidden || !$("#savePanel").hidden || !$("#phonePanel").hidden;
+  $("#cutoffs").hidden = $("#savePanel").hidden = $("#phonePanel").hidden = true;
   return open;
 }
 function togglePanel(id) { const show = $(id).hidden; closePanels(); $(id).hidden = !show; }
 for (const x of document.querySelectorAll(".cutoffs .x")) x.onclick = closePanels;
 document.addEventListener("mousedown", e => {
-  if (!e.target.closest(".cutoffs, #cutBtn, #saveBtn")) closePanels();
+  if (!e.target.closest(".cutoffs, #cutBtn, #saveBtn, #phoneBtn")) closePanels();
 });
 $("#saveBtn").onclick = () => togglePanel("#savePanel");
 const lossy = () => ["jpeg","heic"].includes($("#exFormat").value);
@@ -536,6 +626,9 @@ $("#exGo").onclick = async () => {
 };
 $("#exUndo").onclick = () => api("/api/delete-last-export", {}).then(() => refresh());
 $("#cutBtn").onclick = () => togglePanel("#cutoffs");
+$("#phoneBtn").onclick = () => togglePanel("#phonePanel");
+$("#phoneOn").onclick = () => api("/api/phone-access", {on: true}).then(() => refresh(true));
+$("#phoneOffBtn").onclick = () => api("/api/phone-access", {on: false}).then(() => refresh(true));
 let cutTimer = 0;
 for (const id of ["#auto", "#rev"]) $(id).oninput = () => {
   $("#autoLbl").textContent = "Auto-file as mine at " + $("#auto").value + "% or more";

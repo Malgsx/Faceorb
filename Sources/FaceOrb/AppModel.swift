@@ -45,10 +45,20 @@ final class AppModel: ObservableObject {
     private var embedder: FaceEmbedder?
     private var work: Task<Void, Never>?
     private var webServer: HTTPServer?
+    private var webAPI: WebAPI?
+    private var phoneCache: PhoneAccess?
 
     static let webPort: UInt16 = 47615
     @AppStorage("webAppEnabled") var webAppEnabled = true {
         didSet { objectWillChange.send(); webAppEnabled ? startWebApp() : stopWebApp() }
+    }
+    /// Also serves the web app on the local network, so phones can open it and add it to their home screen.
+    @AppStorage("phoneAccessEnabled") var phoneAccessEnabled = false {
+        didSet {
+            objectWillChange.send()
+            if phoneAccessEnabled && !webAppEnabled { webAppEnabled = true; return }   // starts it, already open to phones
+            if webServer != nil { stopWebApp(); startWebApp() }
+        }
     }
 
     init(store: LibraryStore = LibraryStore()) {
@@ -71,15 +81,17 @@ final class AppModel: ObservableObject {
 
     // MARK: Web app
 
-    /// Serves the browser version on 127.0.0.1 only. The key lives in the data folder (0600),
-    /// so a bookmarked link keeps working until "Delete all data".
+    /// Serves the browser version on 127.0.0.1, and on the local network too while phone access is on.
+    /// The key lives in the data folder (0600), so a bookmarked link keeps working until "Delete all data".
     func startWebApp() {
         guard webServer == nil else { return }
         let api = WebAPI(backend: AppBackend(model: self), token: webToken())
+        api.allowLAN = phoneAccessEnabled
         let server = HTTPServer { await api.handle($0) }
         do {
-            api.port = try server.start(preferredPort: Self.webPort)
+            api.port = try server.start(preferredPort: Self.webPort, lan: phoneAccessEnabled)
             webServer = server
+            webAPI = api
             webURL = api.launchURL
         } catch {
             lastError = "Couldn't start the web app: \(error.localizedDescription)"
@@ -89,7 +101,18 @@ final class AppModel: ObservableObject {
     func stopWebApp() {
         webServer?.stop()
         webServer = nil
+        webAPI = nil
         webURL = nil
+    }
+
+    /// The link and QR code a phone uses, while phone access is on. Follows the Mac to other networks.
+    func phoneLink() -> PhoneAccess? {
+        guard phoneAccessEnabled, let api = webAPI else { return nil }
+        let url = HTTPServer.lanAddresses().first.map { "http://\($0):\(api.port)/?t=\(api.token)" }
+        if phoneCache == nil || phoneCache?.url != url {
+            phoneCache = PhoneAccess(url: url, qrPNG: url.flatMap { Images.qrPNG($0) })
+        }
+        return phoneCache
     }
 
     func openWebApp() {

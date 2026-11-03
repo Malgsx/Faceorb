@@ -5,8 +5,9 @@ import Glibc
 import Darwin
 #endif
 
-/// A deliberately small HTTP/1.1 server for the local web app: loopback only, one request per
-/// connection, no TLS (traffic never leaves the Mac). Plain BSD sockets so it builds on macOS and Linux.
+/// A deliberately small HTTP/1.1 server for the local web app: loopback by default (the menu bar
+/// can open it to the local network for phones), one request per connection, no TLS.
+/// Plain BSD sockets so it builds on macOS and Linux.
 public final class HTTPServer: @unchecked Sendable {
     public struct Request: Sendable {
         public var method: String
@@ -46,18 +47,19 @@ public final class HTTPServer: @unchecked Sendable {
 
     public init(handler: @escaping Handler) { self.handler = handler }
 
-    /// Binds 127.0.0.1. Tries `preferredPort` first (so bookmarks keep working), then any free port.
+    /// Binds 127.0.0.1, or every interface when `lan` is true (so phones on the same network can
+    /// connect). Tries `preferredPort` first (so bookmarks keep working), then any free port.
     @discardableResult
-    public func start(preferredPort: UInt16 = 0) throws -> UInt16 {
+    public func start(preferredPort: UInt16 = 0, lan: Bool = false) throws -> UInt16 {
         for candidate in Set([preferredPort, 0]).sorted(by: >) {
-            if let bound = try? bind(candidate) { port = bound; break }
+            if let bound = try? bind(candidate, address: lan ? "0.0.0.0" : "127.0.0.1") { port = bound; break }
         }
         guard listenFD >= 0 else { throw POSIXError(.EADDRINUSE) }
         let fd = listenFD
         let thread = Thread { [weak self] in
             while true {
                 let client = accept(fd, nil, nil)
-                guard let server = self, server.listenFD >= 0 else { if client >= 0 { close(client) }; return }
+                guard let server = self, server.listenFD == fd else { if client >= 0 { close(client) }; return }
                 if client < 0 { continue }
                 Thread { server.serve(client) }.start()
             }
@@ -73,7 +75,25 @@ public final class HTTPServer: @unchecked Sendable {
         if fd >= 0 { shutdown(fd, Int32(SHUT_RDWR)); close(fd) }
     }
 
-    private func bind(_ port: UInt16) throws -> UInt16 {
+    /// IPv4 addresses of this machine's network interfaces, excluding loopback and link-local,
+    /// Wi-Fi/Ethernet (`en…`) first. These are what a phone on the same network can reach.
+    public static func lanAddresses() -> [String] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return [] }
+        defer { freeifaddrs(list) }
+        var found: [(name: String, ip: String)] = []
+        for ifa in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            let flags = Int32(ifa.pointee.ifa_flags)
+            guard let sa = ifa.pointee.ifa_addr, sa.pointee.sa_family == sa_family_t(AF_INET),
+                  flags & Int32(IFF_UP) != 0, flags & Int32(IFF_LOOPBACK) == 0 else { continue }
+            let ip = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { String(cString: inet_ntoa($0.pointee.sin_addr)) }
+            if ip.hasPrefix("169.254.") || ip.hasPrefix("127.") { continue }
+            found.append((String(cString: ifa.pointee.ifa_name), ip))
+        }
+        return found.sorted { ($0.name.hasPrefix("en") ? 0 : 1, $0.name) < ($1.name.hasPrefix("en") ? 0 : 1, $1.name) }.map(\.ip)
+    }
+
+    private func bind(_ port: UInt16, address: String) throws -> UInt16 {
         #if os(Linux)
         let fd = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
         #else
@@ -88,7 +108,7 @@ public final class HTTPServer: @unchecked Sendable {
         #endif
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = port.bigEndian
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        addr.sin_addr.s_addr = inet_addr(address)
         let ok = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                 Glue.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))

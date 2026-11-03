@@ -24,6 +24,7 @@ struct OrbPopover: View {
     @EnvironmentObject var updater: Updater
     @EnvironmentObject var windows: AppWindows
     @AppStorage("dropdownTab") private var tab: Tab = .home
+    @State private var showPhone = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -139,7 +140,10 @@ struct OrbPopover: View {
                 .help("Open the full review window")
             Button { model.openWebApp() } label: { Label("Browser", systemImage: "safari") }
                 .disabled(!model.webAppEnabled)
-                .help(model.webAppEnabled ? "Open FaceOrb in your browser (only this Mac can reach it)" : "Turn on the web app in Privacy")
+                .help(model.webAppEnabled ? "Open FaceOrb in your browser on this Mac" : "Turn on the web app in Privacy")
+            Button { showPhone.toggle() } label: { Label("Phone", systemImage: "iphone") }
+                .help("Open FaceOrb on your phone with a QR code")
+                .popover(isPresented: $showPhone, arrowEdge: .bottom) { PhoneView().environmentObject(model) }
             Spacer()
             Button { windows.dropdownPinned.toggle() } label: { Image(systemName: windows.dropdownPinned ? "pin.fill" : "pin") }
                 .help(windows.dropdownPinned ? "Unpin: close when clicking other apps" : "Keep open while using other apps")
