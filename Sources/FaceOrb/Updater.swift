@@ -17,13 +17,16 @@ final class Updater: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var updateAvailable = false
+    @Published private(set) var checking = false
+    /// When the last check finished, and whether it could reach the checkout or GitHub.
+    @Published private(set) var lastChecked: Date?
+    @Published private(set) var lastCheckFailed = false
 
     /// The checkout this app was built from, or nil for a build without one (updates are then hidden).
     let sourceDir: URL?
     let builtVersion: String?
     /// Where CI publishes prebuilt builds, for an app that was downloaded rather than built here.
     let releaseURL: URL?
-    private var checking = false
     private var lastRemoteCheck = Date.distantPast
     private var timer: Timer?
 
@@ -49,22 +52,25 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Compares the checkout with the running build. Cheap: a few git commands off the main thread.
-    func check() {
+    /// Compares the checkout (or the published version) with the running build. Cheap: a few git
+    /// commands off the main thread, or one small download. `force` skips the published check's
+    /// throttle, for the Check for Updates button.
+    func check(force: Bool = false) {
         guard !checking, state != .updating else { return }
         if let base = releaseURL {
             // Opening the dropdown checks too; at most every few minutes.
-            guard Date().timeIntervalSince(lastRemoteCheck) > 300 else { return }
+            guard force || Date().timeIntervalSince(lastRemoteCheck) > 300 else { return }
             checking = true
             lastRemoteCheck = Date()
             Task {
                 var req = URLRequest(url: base.appendingPathComponent("version.txt"))
                 req.cachePolicy = .reloadIgnoringLocalCacheData
                 let published = try? await URLSession.shared.data(for: req)
-                checking = false
-                guard let (data, resp) = published, (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
-                let version = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !version.isEmpty { updateAvailable = version != builtVersion }
+                let version = published.flatMap { data, resp in
+                    (resp as? HTTPURLResponse)?.statusCode == 200
+                        ? String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+                }
+                finishCheck(version.flatMap { $0.isEmpty ? nil : $0 })
             }
             return
         }
@@ -74,9 +80,16 @@ final class Updater: ObservableObject {
             let current = await Task.detached {
                 try? Self.run("/bin/bash", [dir.appendingPathComponent("scripts/source-fingerprint.sh").path], in: dir)
             }.value?.trimmingCharacters(in: .whitespacesAndNewlines)
-            checking = false
-            if let current, !current.isEmpty { updateAvailable = current != builtVersion }
+            finishCheck(current.flatMap { $0.isEmpty ? nil : $0 })
         }
+    }
+
+    /// Records a check's result: the newest version it found, or nil when it couldn't find one.
+    private func finishCheck(_ newest: String?) {
+        checking = false
+        lastChecked = Date()
+        lastCheckFailed = newest == nil
+        if let newest { updateAvailable = newest != builtVersion }
     }
 
     /// Rebuilds with scripts/build-app.sh (or downloads the published build), then relaunches into it.
