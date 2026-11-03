@@ -484,6 +484,9 @@ struct ReviewCardTab: View {
                     }
                 }
                 .task(id: photo.id) {
+                    // Blank first, so the card never shows the previous photo while A/R act on this one.
+                    image = nil
+                    face = nil
                     image = await ThumbnailCache.shared.thumbnail(path: photo.localPath, maxPixel: 900)
                     if let fid = match.bestFaceID, let f = model.face(fid) {
                         face = await ThumbnailCache.shared.face(path: photo.localPath, box: f.box)

@@ -56,7 +56,8 @@ case "match":
                  lib.faces.count, photoIDs.count, clusters.count, Date().timeIntervalSince(t0)))
     for (i, c) in clusters.prefix(8).enumerated() { print("  cluster \(i): \(c.photoCount) photos, \(c.faceIDs.count) faces") }
 
-    let pick = args.count > 3 ? Int(args[3])! : 0
+    let pick = args.count > 3 ? Int(args[3]) ?? -1 : 0
+    guard clusters.indices.contains(pick) else { print("no cluster \(args.count > 3 ? args[3] : "0") (there are \(clusters.count))"); exit(2) }
     let cluster = clusters[pick]
     lib.references = PeopleClusterer.references(from: cluster, faces: lib.faces)
     let clusterPhotos = Set(cluster.faceIDs.map { $0.split(separator: "#")[0] }.map(String.init))

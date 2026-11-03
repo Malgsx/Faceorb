@@ -97,18 +97,32 @@ public struct LinkImporter: Sendable {
         }
         embedded += PixiesetClient.allMatches(#"(?i)<meta\b[^>]*?property\s*=\s*["']og:image["'][^>]*?content\s*=\s*["']([^"']+)["']"#, in: html)
 
+        // A page on the internet can't send FaceOrb to this Mac or the local network (routers,
+        // printers, this app's own server). A gallery that is itself on the local network can.
+        let baseZone = networkZone(base.host)
         func clean(_ list: [String]) -> [URL] {
             var seen = Set<String>()
             return list.compactMap { raw -> URL? in
                 let s = PixiesetClient.decodeEntities(raw.trimmingCharacters(in: .whitespaces))
                 guard !s.hasPrefix("data:"), let url = URL(string: s, relativeTo: base)?.absoluteURL,
-                      url.scheme == "https" || url.scheme == "http" else { return nil }
+                      url.scheme == "https" || url.scheme == "http", networkZone(url.host) <= baseZone else { return nil }
                 guard !["svg", "gif", "ico"].contains(url.pathExtension.lowercased()) else { return nil }
                 return seen.insert(url.absoluteString).inserted ? url : nil
             }
         }
         let shown = clean(embedded), links = clean(linked)
         return links.isEmpty ? (shown, []) : (links, shown)
+    }
+
+    /// 0: the internet, 1: the local network, 2: this machine.
+    static func networkZone(_ host: String?) -> Int {
+        guard let h = host?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]")), !h.isEmpty else { return 2 }
+        if h == "localhost" || h.hasSuffix(".localhost") || h.hasPrefix("127.") || h == "::1" || h == "0.0.0.0" { return 2 }
+        if h.hasSuffix(".local") || h.hasPrefix("10.") || h.hasPrefix("192.168.") || h.hasPrefix("169.254.")
+            || h.hasPrefix("fc") || h.hasPrefix("fd") || h.hasPrefix("fe80:") || !h.contains(".") && !h.contains(":") { return 1 }
+        let parts = h.split(separator: ".").compactMap { Int($0) }
+        if parts.count == 4, parts[0] == 172, (16...31).contains(parts[1]) { return 1 }
+        return 0
     }
 
     /// The widest candidate in a srcset ("a.jpg 400w, b.jpg 1600w"); the last one if none has a width.
@@ -172,6 +186,8 @@ public struct LinkImporter: Sendable {
             return Album(title: resp.suggestedFilename ?? fallbackTitle, source: source, content: .images([finalURL]), estimatedBytes: size)
         }
 
+        // Anything this big isn't a web page (a video, say): don't read it into memory.
+        guard size <= 20_000_000 else { try? FileManager.default.removeItem(at: file); throw ImportError.noPhotos }
         let html = String(decoding: (try? Data(contentsOf: file)) ?? Data(), as: UTF8.self)
         try? FileManager.default.removeItem(at: file)
         let title = Self.pageTitle(html) ?? fallbackTitle

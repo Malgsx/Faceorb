@@ -73,6 +73,27 @@ public struct MatchSettings: Codable, Hashable, Sendable {
     /// After review, drop signatures of faces that are clearly not the user.
     public var forgetBystandersAutomatically: Bool = false
     public init() {}
+
+    /// The cutoffs the sliders allow: auto-file at 30–90%, review from 15% up to the auto cutoff.
+    public mutating func setThresholds(auto: Float, review: Float) {
+        autoThreshold = min(max(auto, 0.3), 0.9)
+        reviewThreshold = min(max(review, 0.15), autoThreshold)
+    }
+
+    // Settings saved by another build may lack fields (or have extra ones): keep defaults for those.
+    private enum CodingKeys: String, CodingKey {
+        case autoThreshold, reviewThreshold, topK, minFacePixels, forgetBystandersAutomatically
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MatchSettings()
+        autoThreshold = (try? c.decodeIfPresent(Float.self, forKey: .autoThreshold)) ?? d.autoThreshold
+        reviewThreshold = (try? c.decodeIfPresent(Float.self, forKey: .reviewThreshold)) ?? d.reviewThreshold
+        topK = (try? c.decodeIfPresent(Int.self, forKey: .topK)) ?? d.topK
+        minFacePixels = (try? c.decodeIfPresent(Double.self, forKey: .minFacePixels)) ?? d.minFacePixels
+        forgetBystandersAutomatically = (try? c.decodeIfPresent(Bool.self, forKey: .forgetBystandersAutomatically)) ?? d.forgetBystandersAutomatically
+    }
 }
 
 public struct Library: Codable, Sendable {

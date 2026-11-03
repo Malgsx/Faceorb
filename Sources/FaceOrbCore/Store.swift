@@ -18,10 +18,15 @@ public final class LibraryStore: @unchecked Sendable {
         self.root = root
     }
 
+    /// The saved library, or an empty one. A library.json that can't be read (damaged, or from a
+    /// build that stored something this one doesn't understand) is moved aside first, so the next
+    /// save can't overwrite the user's data with an empty library.
     public func load() -> Library {
-        guard let data = try? Data(contentsOf: libraryURL),
-              let lib = try? JSONDecoder().decode(Library.self, from: data) else { return Library() }
-        return lib
+        guard let data = try? Data(contentsOf: libraryURL) else { return Library() }
+        if let lib = try? JSONDecoder().decode(Library.self, from: data) { return lib }
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        try? FileManager.default.moveItem(at: libraryURL, to: root.appendingPathComponent("library.json.unreadable-\(stamp)"))
+        return Library()
     }
 
     public func save(_ lib: Library) throws {

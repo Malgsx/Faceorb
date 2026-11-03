@@ -139,19 +139,20 @@ public struct PixiesetClient: Sendable {
                     guard let url = item.webURL else { return nil }
                     let dest = folder.appendingPathComponent("\(item.id).jpg")
                     if !FileManager.default.fileExists(atPath: dest.path) {
-                        var lastError: Error?
+                        var photo: Data?
                         for attempt in 0..<3 {
                             do {
-                                let (data, _) = try await get(url)
-                                try data.write(to: dest, options: .atomic)
-                                lastError = nil
+                                photo = try await get(url).0
                                 break
                             } catch {
-                                lastError = error
+                                // One broken photo shouldn't stop the album; it's tried again next import.
+                                if attempt == 2 { return nil }
                                 try await Task.sleep(nanoseconds: UInt64(500_000_000 << attempt))
                             }
                         }
-                        if let lastError { throw lastError }
+                        // An error page served with 200 isn't a photo, and saved it would never be retried.
+                        guard let photo, LinkImporter.imageExtension(for: photo) != nil else { return nil }
+                        try photo.write(to: dest, options: .atomic)
                         try await Task.sleep(nanoseconds: 100_000_000)   // be polite to the host
                     }
                     return Photo(id: "\(gallery.source)/\(item.id)", name: item.name, source: gallery.source,

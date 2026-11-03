@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
         case importing(done: Int, total: Int)
         case analyzing(done: Int, total: Int)
         case enrolling
+        case readingFolder
         case exporting(done: Int, total: Int)
 
         var isBusy: Bool { self != .idle }
@@ -20,6 +21,7 @@ final class AppModel: ObservableObject {
             case .importing(let d, let t): "Downloading album… \(d)/\(t)"
             case .analyzing(let d, let t): "Finding faces… \(d)/\(t)"
             case .enrolling: "Learning your face…"
+            case .readingFolder: "Looking for photos…"
             case .exporting(let d, let t): "Saving photos… \(d)/\(t)"
             }
         }
@@ -199,7 +201,13 @@ final class AppModel: ObservableObject {
                     photos = try await client.download(gallery, to: store.albumFolder(for: gallery.source), progress: progress)
                     (source, title) = (gallery.source, gallery.title)
                 } else {
-                    try DiskCheck.preflight(folder: store.albumFolder(for: album.source), needed: album.estimatedBytes)
+                    do {
+                        try DiskCheck.preflight(folder: store.albumFolder(for: album.source), needed: album.estimatedBytes)
+                    } catch {
+                        // download() would have deleted the downloaded .zip; nothing else will.
+                        if case .zip(let file) = album.content { try? FileManager.default.removeItem(at: file) }
+                        throw error
+                    }
                     activity = .importing(done: 0, total: 1)
                     photos = try await links.download(album, to: store.albumFolder(for: album.source), progress: progress)
                     (source, title) = (album.source, album.title)
@@ -217,11 +225,17 @@ final class AppModel: ObservableObject {
 
     func importFolder(_ folder: URL) {
         lastError = nil
-        let photos = FolderImporter.scan(folder)
-        guard !photos.isEmpty else { lastError = "No photos found in \(folder.lastPathComponent)."; return }
-        addPhotos(photos, source: photos[0].source, title: folder.lastPathComponent, origin: AlbumOrigin())
+        activity = .readingFolder
         work = Task {
-            await analyzePending()
+            // Off the main thread: a big folder or a network drive can take a while to walk.
+            let photos = await Task.detached(priority: .userInitiated) { FolderImporter.scan(folder) }.value
+            guard !Task.isCancelled else { return }
+            if photos.isEmpty {
+                lastError = "No photos found in \(folder.lastPathComponent)."
+            } else {
+                addPhotos(photos, source: photos[0].source, title: folder.lastPathComponent, origin: AlbumOrigin())
+                await analyzePending()
+            }
             activity = .idle
         }
     }
@@ -454,10 +468,7 @@ final class AppModel: ObservableObject {
     var nextReview: (Photo, PhotoMatch)? { photos(in: .review).first }
 
     func setThresholds(auto: Float, review: Float) {
-        commit { lib in
-            lib.settings.autoThreshold = auto
-            lib.settings.reviewThreshold = min(review, auto)
-        }
+        commit { $0.settings.setThresholds(auto: auto, review: review) }
     }
 
     func setAutoForget(_ on: Bool) { commit { $0.settings.forgetBystandersAutomatically = on } }

@@ -304,7 +304,9 @@ struct PhotoCell: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .accessibilityAddTraits(.isButton)
-        .task(id: photo.localPath) {
+        // Also keyed on the matched face, so picking a different face updates the badge.
+        .task(id: "\(photo.localPath)|\(match.bestFaceID ?? "")") {
+            face = nil
             loading = true
             image = await ThumbnailCache.shared.thumbnail(path: photo.localPath)
             loading = false
@@ -449,7 +451,7 @@ struct CutoffControls: View {
                                   set: { model.setThresholds(auto: Float($0), review: s.reviewThreshold) }), in: 0.3...0.9)
             Text("Ask me between \(Int(s.reviewThreshold * 100))% and \(Int(s.autoThreshold * 100))%")
             Slider(value: Binding(get: { Double(s.reviewThreshold) },
-                                  set: { model.setThresholds(auto: s.autoThreshold, review: Float($0)) }), in: 0.15...Double(s.autoThreshold))
+                                  set: { model.setThresholds(auto: s.autoThreshold, review: Float($0)) }), in: 0.15...max(0.15, Double(s.autoThreshold)))
             Text("Scores are how closely a face matches yours. 50% is a confident match for this model.")
                 .font(.caption).foregroundStyle(.secondary)
         }

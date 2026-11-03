@@ -51,7 +51,7 @@ struct EnrollView: View {
     }
 
     private func isPicked(_ c: PeopleClusterer.Cluster) -> Bool {
-        let picked = Set(model.lib.references.compactMap(\.faceID))
+        let picked = Set(model.lib.references.filter(\.positive).compactMap(\.faceID))
         return c.faceIDs.contains(where: picked.contains)
     }
 

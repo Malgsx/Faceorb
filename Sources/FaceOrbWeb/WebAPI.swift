@@ -165,7 +165,7 @@ public final class WebAPI: @unchecked Sendable {
             return .json(lib.faces.filter { $0.photoID == id }.map { FaceDTO(id: $0.id, box: $0.box, hasSignature: $0.signature != nil) })
         case "/api/people":
             let lib = await backend.snapshot().lib
-            let picked = Set(lib.references.compactMap(\.faceID))
+            let picked = Set(lib.references.filter(\.positive).compactMap(\.faceID))
             let faces = Dictionary(uniqueKeysWithValues: lib.faces.map { ($0.id, $0) })
             let people = PeopleClusterer.cluster(lib.faces).compactMap { c -> PersonDTO? in
                 guard let f = faces[c.id] else { return nil }
@@ -324,8 +324,7 @@ public actor HeadlessBackend: FaceOrbBackend {
             lib.references += PeopleClusterer.references(from: c, faces: lib.faces)
             message = "Matching against the person you picked."
         case .thresholds(let a, let r):
-            lib.settings.autoThreshold = a
-            lib.settings.reviewThreshold = min(r, a)
+            lib.settings.setThresholds(auto: a, review: r)
         case .autoForget(let on): lib.settings.forgetBystandersAutomatically = on
         case .forgetOthers: message = "Deleted \(Privacy.forgetBystanders(&lib)) face signatures of other people."
         case .forgetMe: Privacy.forgetMe(&lib); message = "Deleted your face references and decisions."

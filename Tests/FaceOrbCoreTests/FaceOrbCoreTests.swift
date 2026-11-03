@@ -415,3 +415,117 @@ final class LinkImportTests: XCTestCase {
         XCTAssertTrue(LinkImporter.source(for: a).hasPrefix("link:"))
     }
 }
+
+/// Regressions found in review: each fails on the code before its fix.
+final class ReviewRegressionTests: XCTestCase {
+    func tempDir() -> URL {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("faceorb-test-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return dir
+    }
+
+    func testLibraryWithPartialSettingsKeepsItsPhotos() throws {
+        let store = LibraryStore(root: tempDir())
+        try FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
+        // A library written by a build whose settings had fewer (or other) fields.
+        try Data(#"{"photos":[{"id":"p","name":"p.jpg","source":"s","localPath":"/x","analyzed":true}],"settings":{"autoThreshold":0.6}}"#.utf8)
+            .write(to: store.libraryURL)
+        let lib = store.load()
+        XCTAssertEqual(lib.photos.map(\.id), ["p"])
+        XCTAssertEqual(lib.settings.autoThreshold, 0.6)
+        XCTAssertEqual(lib.settings.reviewThreshold, MatchSettings().reviewThreshold)
+    }
+
+    func testUnreadableLibraryIsSetAsideNotOverwritten() throws {
+        let store = LibraryStore(root: tempDir())
+        try FileManager.default.createDirectory(at: store.root, withIntermediateDirectories: true)
+        let original = Data(#"{"photos":"not a list"}"#.utf8)
+        try original.write(to: store.libraryURL)
+        XCTAssertTrue(store.load().photos.isEmpty)
+        try store.save(Library())   // what the app does on its first change
+        let kept = try FileManager.default.contentsOfDirectory(atPath: store.root.path).filter { $0.hasPrefix("library.json.unreadable") }
+        XCTAssertEqual(kept.count, 1, "the unreadable library is kept for recovery")
+        XCTAssertEqual(try Data(contentsOf: store.root.appendingPathComponent(try XCTUnwrap(kept.first))), original)
+    }
+
+    func testThresholdsFromTheWebAreClamped() async throws {
+        let api = WebAPI(backend: HeadlessBackend(lib: Library()), token: "k")
+        api.port = 4000
+        let auth = ["host": "127.0.0.1:4000", "cookie": "faceorb=k", "x-faceorb": "1"]
+        _ = await api.handle(HTTPServer.Request(method: "POST", path: "/api/thresholds", headers: auth, body: Data(#"{"auto":0.1,"review":0.02}"#.utf8)))
+        let r = await api.handle(HTTPServer.Request(method: "GET", path: "/api/state", headers: auth))
+        let settings = (try JSONSerialization.jsonObject(with: r.body) as! [String: Any])["settings"] as! [String: Any]
+        XCTAssertEqual((settings["autoThreshold"] as! NSNumber).floatValue, 0.3, accuracy: 1e-6)
+        XCTAssertEqual((settings["reviewThreshold"] as! NSNumber).floatValue, 0.15, accuracy: 1e-6)
+    }
+
+    func testUndoingOnePhotoKeepsASimilarlyNamedPhotosReference() {
+        var lib = Library()
+        lib.photos = [Photo(id: "a.jpg", name: "a.jpg", source: "s", localPath: "/a"),
+                      Photo(id: "a.jpg#2.jpg", name: "a.jpg#2.jpg", source: "s", localPath: "/b")]
+        lib.faces = [Face(id: "a.jpg#0", photoID: "a.jpg", box: NormRect(x: 0, y: 0, width: 0.1, height: 0.1), signature: [1, 0]),
+                     Face(id: "a.jpg#2.jpg#0", photoID: "a.jpg#2.jpg", box: NormRect(x: 0, y: 0, width: 0.1, height: 0.1), signature: [0, 1])]
+        Matcher.decide(&lib, photoID: "a.jpg#2.jpg", verdict: .approved, faceID: "a.jpg#2.jpg#0")
+        Matcher.decide(&lib, photoID: "a.jpg", verdict: .rejected, faceID: "a.jpg#0")
+        Matcher.undo(&lib, photoID: "a.jpg")
+        XCTAssertEqual(lib.references.compactMap(\.faceID), ["a.jpg#2.jpg#0"])
+    }
+
+    func testRejectedPersonIsNotShownAsPicked() async throws {
+        var lib = Library()
+        lib.photos = (0..<3).map { Photo(id: "p\($0)", name: "p\($0).jpg", source: "s", localPath: "/x") }
+        lib.faces = (0..<3).map { Face(id: "p\($0)#0", photoID: "p\($0)", box: NormRect(x: 0, y: 0, width: 0.1, height: 0.1), signature: [1, 0]) }
+        Matcher.decide(&lib, photoID: "p0", verdict: .rejected, faceID: "p0#0")
+        let api = WebAPI(backend: HeadlessBackend(lib: lib), token: "k")
+        api.port = 4000
+        let r = await api.handle(HTTPServer.Request(method: "GET", path: "/api/people", headers: ["host": "127.0.0.1:4000", "cookie": "faceorb=k"]))
+        let people = try JSONSerialization.jsonObject(with: r.body) as! [[String: Any]]
+        XCTAssertEqual(people.count, 1)
+        XCTAssertEqual(people[0]["picked"] as? Bool, false)
+    }
+
+    func testPagesCantPointImportsAtTheLocalNetwork() {
+        let html = #"<a href="http://192.168.1.1/reboot.jpg">x</a><img src="http://127.0.0.1:47615/x.jpg"><img src="http://router.local/a.jpg"><img src="https://cdn.example.com/1.jpg">"#
+        let urls = LinkImporter.imageURLs(inPage: html, base: URL(string: "https://example.com/album")!)
+        XCTAssertEqual(urls.primary.map(\.absoluteString), ["https://cdn.example.com/1.jpg"])
+        // A gallery served from the local network may link to its own neighbours.
+        let lan = LinkImporter.imageURLs(inPage: html, base: URL(string: "http://192.168.1.20/album")!)
+        XCTAssertEqual(lan.primary.count, 1)
+        XCTAssertEqual(lan.fallback.count, 2, "loopback stays blocked")
+    }
+
+    func testZipCantWriteOutsideItsFolder() throws {
+        let root = tempDir()
+        let dest = root.appendingPathComponent("a/dest")
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        // The symlink entry points here; an existing folder is what makes the attack work.
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("outside"), withIntermediateDirectories: true)
+        let zip = Bundle.module.url(forResource: "zipslip", withExtension: "zip", subdirectory: "Fixtures")!
+        _ = try? LinkImporter.unzip(zip, into: dest)   // failing is fine; escaping isn't
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("a/escape.jpg").path), "../ entry escaped")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("outside/through-link.jpg").path), "symlink entry escaped")
+    }
+
+    func testOneBrokenPixiesetPhotoDoesntSinkTheAlbum() async throws {
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 7, count: 64))
+        let server = HTTPServer { req in
+            switch req.path {
+            case "/ok.jpg": HTTPServer.Response(headers: ["Content-Type": "image/jpeg"], body: jpeg)
+            case "/error-page.jpg": .text("<!doctype html><p>Server busy</p>", type: "text/html")
+            default: .text("missing", status: 404)
+            }
+        }
+        let port = try server.start()
+        defer { server.stop() }
+        func photo(_ id: Int64, _ path: String) -> PixiesetClient.RemotePhoto {
+            PixiesetClient.RemotePhoto(id: id, name: "\(id).jpg", pathXlarge: "http://127.0.0.1:\(port)/\(path)")
+        }
+        let gallery = PixiesetClient.Gallery(title: "t", baseURL: URL(string: "http://127.0.0.1:\(port)/")!, collectionKey: "k",
+                                             collectionID: "1", photos: [photo(1, "ok.jpg"), photo(2, "gone.jpg"), photo(3, "error-page.jpg")])
+        let folder = tempDir()
+        let photos = try await PixiesetClient().download(gallery, to: folder) { _, _ in }
+        XCTAssertEqual(photos.map(\.name), ["1.jpg"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["1.jpg"], "no HTML saved as a photo")
+    }
+}

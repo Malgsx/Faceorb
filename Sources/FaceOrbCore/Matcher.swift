@@ -81,10 +81,7 @@ public enum Matcher {
 
     private static func record(_ lib: inout Library, photoID: String, verdict: Verdict, faceID chosen: String?) {
         lib.verdicts[photoID] = verdict
-        lib.references.removeAll { ref in
-            guard let f = ref.faceID else { return false }
-            return f.hasPrefix(photoID + "#") && (ref.origin == .approval || ref.origin == .rejection)
-        }
+        removeDecisionReferences(&lib, photoID: photoID)
         guard let id = chosen, let face = lib.faces.first(where: { $0.id == id }), let sig = face.signature else { return }
         lib.references.append(Reference(signature: sig, positive: verdict == .approved,
                                         origin: verdict == .approved ? .approval : .rejection, faceID: id))
@@ -96,7 +93,17 @@ public enum Matcher {
 
     public static func undo(_ lib: inout Library, photoID: String) {
         lib.verdicts[photoID] = nil
-        lib.references.removeAll { ($0.faceID?.hasPrefix(photoID + "#") ?? false) && ($0.origin == .approval || $0.origin == .rejection) }
+        removeDecisionReferences(&lib, photoID: photoID)
+    }
+
+    /// Drops the approval or rejection reference a decision on this photo added. Matches by the
+    /// face's photo rather than an id prefix, so "a.jpg" never touches "a.jpg#2.jpg".
+    private static func removeDecisionReferences(_ lib: inout Library, photoID: String) {
+        let faces = Set(lib.faces.lazy.filter { $0.photoID == photoID }.map(\.id))
+        lib.references.removeAll { ref in
+            guard let f = ref.faceID, ref.origin == .approval || ref.origin == .rejection else { return false }
+            return faces.contains(f)
+        }
     }
 }
 
