@@ -13,8 +13,7 @@ Everything runs on your Mac. No accounts, no cloud services.
 
 ## Requirements
 
-- macOS 14 Sonoma or newer
-- Apple's Command Line Tools (the installer will ask to install them if they're missing)
+- macOS 14 Sonoma or newer, on Apple silicon or Intel
 
 ## Install
 
@@ -26,11 +25,15 @@ curl -fsSL https://raw.githubusercontent.com/Malgsx/Faceorb/main/install.sh | ba
 
 The installer:
 
-1. Downloads the source code to `~/.faceorb`.
-2. Downloads the face recognition model (37 MB, checked against a known hash).
-3. Builds FaceOrb on your Mac. The first build takes a few minutes.
-4. Installs it to `~/Applications/FaceOrb.app` and starts it.
-5. Adds a `faceorb` command to your shell.
+1. Downloads FaceOrb as built by this repository's CI from `main` (about 75 MB, checked against
+   its published SHA-256). That takes seconds; nothing is compiled on your Mac.
+2. Installs it to `~/Applications/FaceOrb.app` and starts it.
+3. Adds a `faceorb` command to your shell.
+
+To compile it on your Mac instead (needs Apple's Command Line Tools; the installer offers to
+install them), run it with `FACEORB_BUILD_FROM_SOURCE=1`. It also builds from source when no
+ready-made build is available. The app is ad-hoc signed, not notarized: installed with the command
+above it opens normally, but a FaceOrb.zip downloaded in a browser is blocked by Gatekeeper.
 
 If you'd rather read the script before running it:
 
@@ -43,7 +46,9 @@ bash install.sh
 ## Use
 
 1. Click the orb in the menu bar, or type `faceorb` in a new Terminal window.
-2. Paste a link and click Import, or choose a folder of photos.
+2. Paste a link and click Import, or click **Add photos, a folder or a .zip…** (or drop them on
+   the dropdown). That works with files in iCloud Drive, Google Drive and other cloud folders in
+   Finder too.
 3. Wait for the scan to finish, then click "Pick yourself to start sorting" and pick your face.
 4. Go through the photos FaceOrb isn't sure about in the Review tab.
 5. Use "Save my photos" to copy your photos to a folder.
@@ -57,6 +62,10 @@ your own Mac (127.0.0.1) and needs a private key that the button passes along.
 2. Scan the QR code with your phone's camera. Your phone must be on the same Wi-Fi as your Mac.
 3. Add it to your home screen: on iPhone, Share, then **Add to Home Screen**; on Android, ⋮, then
    **Add to Home screen**. It then opens full screen like an app.
+
+To add photos from the phone, tap **Upload photos**: pick them from Photos, or from Files, which
+includes iCloud Drive and Google Drive. For a whole folder, compress it in Files (press and hold,
+then **Compress**) and upload the .zip. Your Mac keeps a copy and finds the faces.
 
 Tap a photo to see it full size, swipe to go to the next one, and use the buttons at the bottom to
 say whether it's you. Your Mac does the face recognition, so it has to be on with FaceOrb running.
@@ -77,7 +86,8 @@ choose the folder.
 
 ## Update
 
-Click Update when the dropdown offers it, or run the install command again.
+Click Update when the dropdown offers it (it downloads the new build), or run the install command
+again. Installs from a clone rebuild from that clone instead.
 
 ## Install your own fork
 

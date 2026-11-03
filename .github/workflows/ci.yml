@@ -26,3 +26,34 @@ jobs:
       - uses: actions/checkout@v4
       - run: apt-get update -qq && apt-get install -y -qq unzip
       - run: swift test
+
+  # Publishes the app for install.sh to download: one rolling release, tag "app", moved to each
+  # main commit that passes the tests.
+  release:
+    name: Publish the app
+    needs: [macos, linux]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build for Apple silicon and Intel
+        run: FACEORB_UNIVERSAL=1 FACEORB_RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/app" scripts/build-app.sh
+      - name: Package
+        run: |
+          ditto -c -k --keepParent build/FaceOrb.app FaceOrb.zip
+          shasum -a 256 FaceOrb.zip | awk '{print $1}' > FaceOrb.zip.sha256
+          plutil -extract FaceOrbSourceVersion raw build/FaceOrb.app/Contents/Info.plist > version.txt
+          lipo -archs build/FaceOrb.app/Contents/MacOS/FaceOrb
+          ls -l FaceOrb.zip; cat version.txt
+      - name: Publish
+        run: |
+          git tag -f app && git push -f origin app
+          gh release view app >/dev/null 2>&1 || gh release create app --verify-tag --title "FaceOrb (latest build of main)" \
+            --notes "Built by CI from main. Install with: curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash"
+          # The app and its checksum first, then version.txt, which tells installed apps an update is ready.
+          gh release upload app FaceOrb.zip FaceOrb.zip.sha256 --clobber
+          gh release upload app version.txt --clobber

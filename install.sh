@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Installs or updates FaceOrb: fetches the source, builds it on this Mac, and puts FaceOrb.app in
-# ~/Applications. Run it again any time to update.
+# Installs or updates FaceOrb in ~/Applications. Run it again any time to update.
 #   curl -fsSL https://raw.githubusercontent.com/Malgsx/Faceorb/main/install.sh | bash
+# Downloads the app CI built from main (seconds). If there is none, or FACEORB_BUILD_FROM_SOURCE=1,
+# it fetches the source and builds it on this Mac instead (minutes).
 # From a clone (your fork, say), `./install.sh` builds and installs that checkout as it is,
 # and the app's Update button then follows it.
 # Optional: FACEORB_SRC (where the source lives, default ~/.faceorb), FACEORB_REPO (e.g. your fork),
-# FACEORB_BRANCH.
+# FACEORB_BRANCH, FACEORB_DOWNLOAD (where prebuilt builds are published).
 set -euo pipefail
 
 REPO="${FACEORB_REPO:-https://github.com/Malgsx/Faceorb.git}"
@@ -26,26 +27,47 @@ die() { printf 'FaceOrb install: %s\n' "$*" >&2; exit 1; }
 major=$(sw_vers -productVersion | cut -d. -f1)
 (( major >= 14 )) || die "FaceOrb needs macOS 14 Sonoma or newer (this Mac has $(sw_vers -productVersion))."
 
-# Swift and git come with Apple's Command Line Tools (full Xcode works too).
-if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find swift >/dev/null 2>&1; then
-  xcode-select --install 2>/dev/null || true
-  die "Apple's Command Line Tools are needed to build FaceOrb. Finish the installer that just opened, then run this again."
+# The fast path: the app CI built and published for this repository's main branch.
+APP=""
+if (( ! LOCAL )) && [[ "${FACEORB_BUILD_FROM_SOURCE:-}" != 1 && "$BRANCH" == main ]]; then
+  SLUG=$(sed -E 's#^(https://|git@)github\.com[:/]##; s#\.git$##' <<<"$REPO")
+  DOWNLOAD="${FACEORB_DOWNLOAD:-https://github.com/$SLUG/releases/download/app}"
+  TMP=$(mktemp -d)
+  trap 'rm -rf "$TMP"' EXIT
+  say "Downloading FaceOrb"
+  if curl -fL# -o "$TMP/FaceOrb.zip" "$DOWNLOAD/FaceOrb.zip" \
+     && curl -fsSL -o "$TMP/FaceOrb.zip.sha256" "$DOWNLOAD/FaceOrb.zip.sha256" \
+     && echo "$(awk '{print $1}' "$TMP/FaceOrb.zip.sha256")  $TMP/FaceOrb.zip" | shasum -a 256 -c - >/dev/null \
+     && ditto -x -k "$TMP/FaceOrb.zip" "$TMP" && [[ -d "$TMP/FaceOrb.app" ]]; then
+    APP="$TMP/FaceOrb.app"
+  else
+    say "No ready-made build to download; building from source instead"
+  fi
 fi
 
-if (( LOCAL )); then
-  say "Installing from this checkout: $SRC"
-elif [[ -d "$SRC/.git" ]]; then
-  say "Updating the source in $SRC"
-  git -C "$SRC" fetch --depth 1 origin "$BRANCH"
-  git -C "$SRC" reset --hard FETCH_HEAD
-else
-  [[ -e "$SRC" ]] && die "$SRC exists but isn't a FaceOrb checkout. Move it away or set FACEORB_SRC."
-  say "Downloading the source to $SRC"
-  git clone --depth 1 --branch "$BRANCH" "$REPO" "$SRC"
-fi
+if [[ -z "$APP" ]]; then
+  # Swift and git come with Apple's Command Line Tools (full Xcode works too).
+  if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find swift >/dev/null 2>&1; then
+    xcode-select --install 2>/dev/null || true
+    die "Apple's Command Line Tools are needed to build FaceOrb. Finish the installer that just opened, then run this again."
+  fi
 
-say "Building (the first build takes a few minutes and uses about 2 GB of build cache)"
-"$SRC/scripts/build-app.sh"
+  if (( LOCAL )); then
+    say "Installing from this checkout: $SRC"
+  elif [[ -d "$SRC/.git" ]]; then
+    say "Updating the source in $SRC"
+    git -C "$SRC" fetch --depth 1 origin "$BRANCH"
+    git -C "$SRC" reset --hard FETCH_HEAD
+  else
+    [[ -e "$SRC" ]] && die "$SRC exists but isn't a FaceOrb checkout. Move it away or set FACEORB_SRC."
+    say "Downloading the source to $SRC"
+    git clone --depth 1 --branch "$BRANCH" "$REPO" "$SRC"
+  fi
+
+  say "Building (the first build takes a few minutes and uses about 2 GB of build cache)"
+  "$SRC/scripts/build-app.sh"
+  APP="$SRC/build/FaceOrb.app"
+fi
 
 if pgrep -x FaceOrb >/dev/null; then
   say "Quitting the running FaceOrb"
@@ -57,7 +79,8 @@ fi
 say "Installing to $DEST"
 mkdir -p "$HOME/Applications"
 rm -rf "$DEST"
-ditto "$SRC/build/FaceOrb.app" "$DEST"
+ditto "$APP" "$DEST"
+xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
 # A `faceorb` terminal command that opens the menu bar dropdown (starting the app if needed).
 ALIAS="alias faceorb='open \"\$HOME/Applications/FaceOrb.app\" --args --show'"

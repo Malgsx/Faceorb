@@ -3,6 +3,8 @@
 #   scripts/build-app.sh            build
 #   scripts/build-app.sh --open     build and launch
 #   scripts/build-app.sh --clean    also delete the build cache (.build, ~1-2 GB) afterwards
+# For published builds (CI): FACEORB_UNIVERSAL=1 builds for Apple silicon and Intel, and
+# FACEORB_RELEASE_URL makes the app update from the builds published there instead of a checkout.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -47,8 +49,10 @@ if [[ -z "${SDKROOT:-}" && "$DEV_DIR" == */CommandLineTools ]] \
   fi
 fi
 
-swift build -c release --product FaceOrb
-BIN="$(swift build -c release --show-bin-path)"
+ARCHS=()
+[[ "${FACEORB_UNIVERSAL:-}" == 1 ]] && ARCHS=(--arch arm64 --arch x86_64)
+swift build -c release "${ARCHS[@]}" --product FaceOrb
+BIN="$(swift build -c release "${ARCHS[@]}" --show-bin-path)"
 
 # Assembled next to the old app and swapped in at the end, so a failed build (or one started
 # from the app's own Update button) never leaves you without a working app.
@@ -60,7 +64,11 @@ cp "$BIN/FaceOrb" "$APP/Contents/MacOS/"
 cp Resources/Info.plist "$APP/Contents/"
 # Lets the app's "Update" button find this checkout and tell when it has changed.
 if [[ -n "$SOURCE_VERSION" ]]; then
-  plutil -insert FaceOrbSourceDir -string "$PWD" "$APP/Contents/Info.plist"
+  if [[ -n "${FACEORB_RELEASE_URL:-}" ]]; then
+    plutil -insert FaceOrbUpdateURL -string "$FACEORB_RELEASE_URL" "$APP/Contents/Info.plist"
+  else
+    plutil -insert FaceOrbSourceDir -string "$PWD" "$APP/Contents/Info.plist"
+  fi
   plutil -insert FaceOrbSourceVersion -string "$SOURCE_VERSION" "$APP/Contents/Info.plist"
 fi
 cp "$MODEL" "$APP/Contents/Resources/"

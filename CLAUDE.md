@@ -16,7 +16,9 @@ face recognition, plus a local web app served by the same process. See README.md
 - `install.sh` is the curl installer: clones to ~/.faceorb, builds, installs to ~/Applications.
   Run from a checkout (`./install.sh`), it installs that checkout without fetching.
 - On Linux (and in orbs), `swift test` covers FaceOrbCore, FaceOrbWeb and faceorb-sim; `.swift-version` pins Swift.
-- CI (`.github/workflows/ci.yml`) builds the app and tests on macOS, and tests on Linux.
+- CI (`.github/workflows/ci.yml`) builds the app and tests on macOS, and tests on Linux. On main it
+  publishes a universal FaceOrb.zip to the rolling `app` release; `install.sh` downloads that
+  (falls back to building), and prebuilt apps' Updater checks its `version.txt`.
 
 ## Data
 `~/Library/Application Support/FaceOrb/`: `library.json` (photos, face boxes, 128-d signatures,

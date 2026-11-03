@@ -1,9 +1,12 @@
 import AppKit
+import CryptoKit
 import Foundation
 
-/// Rebuilds and relaunches FaceOrb from the checkout it was built from.
-/// build-app.sh stamps that folder and a source fingerprint into Info.plist; when the checkout's
-/// fingerprint differs (a new commit or uncommitted edits), an update is available.
+/// Updates FaceOrb in one of two ways, decided by what build-app.sh stamped into Info.plist:
+/// - Built from a checkout (a clone, or an install that built from source): rebuilds from that
+///   checkout when its source fingerprint differs from the running build's.
+/// - Downloaded (install.sh's prebuilt app): downloads the newer build CI published, when the
+///   published version.txt differs from the running build's fingerprint.
 @MainActor
 final class Updater: ObservableObject {
     enum State: Equatable {
@@ -18,10 +21,15 @@ final class Updater: ObservableObject {
     /// The checkout this app was built from, or nil for a build without one (updates are then hidden).
     let sourceDir: URL?
     let builtVersion: String?
+    /// Where CI publishes prebuilt builds, for an app that was downloaded rather than built here.
+    let releaseURL: URL?
     private var checking = false
+    private var lastRemoteCheck = Date.distantPast
     private var timer: Timer?
 
-    var canUpdate: Bool { sourceDir != nil }
+    var canUpdate: Bool { sourceDir != nil || releaseURL != nil }
+    /// True when updating means rebuilding from source (slow) rather than downloading.
+    var rebuilds: Bool { sourceDir != nil }
     var logURL: URL {
         FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/FaceOrb/update.log")
@@ -32,16 +40,35 @@ final class Updater: ObservableObject {
         sourceDir = (bundle.object(forInfoDictionaryKey: "FaceOrbSourceDir") as? String)
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
             .flatMap { FileManager.default.fileExists(atPath: $0.appendingPathComponent("scripts/build-app.sh").path) ? $0 : nil }
-        guard sourceDir != nil else { return }
+        releaseURL = sourceDir != nil ? nil : (bundle.object(forInfoDictionaryKey: "FaceOrbUpdateURL") as? String).flatMap(URL.init(string:))
+        guard canUpdate else { return }
         check()
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        // A checkout is cheap to check; the published version is on GitHub, so ask it less often.
+        timer = Timer.scheduledTimer(withTimeInterval: sourceDir != nil ? 60 : 1800, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.check() }
         }
     }
 
     /// Compares the checkout with the running build. Cheap: a few git commands off the main thread.
     func check() {
-        guard let dir = sourceDir, !checking, state != .updating else { return }
+        guard !checking, state != .updating else { return }
+        if let base = releaseURL {
+            // Opening the dropdown checks too; at most every few minutes.
+            guard Date().timeIntervalSince(lastRemoteCheck) > 300 else { return }
+            checking = true
+            lastRemoteCheck = Date()
+            Task {
+                var req = URLRequest(url: base.appendingPathComponent("version.txt"))
+                req.cachePolicy = .reloadIgnoringLocalCacheData
+                let published = try? await URLSession.shared.data(for: req)
+                checking = false
+                guard let (data, resp) = published, (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
+                let version = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !version.isEmpty { updateAvailable = version != builtVersion }
+            }
+            return
+        }
+        guard let dir = sourceDir else { return }
         checking = true
         Task {
             let current = await Task.detached {
@@ -52,9 +79,22 @@ final class Updater: ObservableObject {
         }
     }
 
-    /// Rebuilds with scripts/build-app.sh, then relaunches into the new build.
+    /// Rebuilds with scripts/build-app.sh (or downloads the published build), then relaunches into it.
     func update() {
-        guard let dir = sourceDir, state != .updating else { return }
+        guard state != .updating else { return }
+        if let base = releaseURL {
+            state = .updating
+            Task {
+                do {
+                    let app = try await Task.detached { try await Self.downloadPublishedApp(from: base) }.value
+                    relaunch(at: app)
+                } catch {
+                    state = .failed(error.localizedDescription)
+                }
+            }
+            return
+        }
+        guard let dir = sourceDir else { return }
         state = .updating
         let log = logURL
         Task {
@@ -96,6 +136,45 @@ final class Updater: ObservableObject {
     }
 
     func dismissError() { if case .failed = state { state = .idle } }
+
+    struct DownloadFailed: LocalizedError {
+        var errorDescription: String?
+    }
+
+    /// Downloads the published FaceOrb.zip, checks it against its published SHA-256, and unpacks it
+    /// into a temporary folder. Returns the app inside.
+    nonisolated static func downloadPublishedApp(from base: URL) async throws -> URL {
+        func fetch(_ name: String) async throws -> Data {
+            var req = URLRequest(url: base.appendingPathComponent(name))
+            req.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
+                throw DownloadFailed(errorDescription: "Couldn't download the update (\(name)).")
+            }
+            return data
+        }
+        let zip = try await fetch("FaceOrb.zip")
+        let expected = String(decoding: try await fetch("FaceOrb.zip.sha256"), as: UTF8.self)
+            .split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        let actual = SHA256.hash(data: zip).map { String(format: "%02x", $0) }.joined()
+        guard actual == expected.lowercased() else {
+            throw DownloadFailed(errorDescription: "The downloaded update didn't match its checksum. Try again later.")
+        }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("faceorb-update-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("FaceOrb.zip")
+        try zip.write(to: file)
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+        p.arguments = ["-x", "-k", file.path, dir.path]
+        try p.run()
+        p.waitUntilExit()
+        let app = dir.appendingPathComponent("FaceOrb.app")
+        guard p.terminationStatus == 0, FileManager.default.fileExists(atPath: app.path) else {
+            throw DownloadFailed(errorDescription: "Couldn't unpack the update.")
+        }
+        return app
+    }
 
     struct CommandFailed: LocalizedError {
         var status: Int32

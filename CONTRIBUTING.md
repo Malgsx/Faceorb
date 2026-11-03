@@ -37,7 +37,9 @@ on a Mac; on Linux it runs with any Swift 6 toolchain (see `.swift-version`).
 2. Run `swift test`. For app or web changes, also build and try it: `scripts/build-app.sh --open`.
    The web app opens from the dropdown's Browser button; try narrow widths for the phone layout.
 3. Open a pull request against `Malgsx/Faceorb:main`. CI builds the app on macOS and runs the
-   tests on macOS and Linux.
+   tests on macOS and Linux. After a merge to `main`, CI also publishes the app (the `app`
+   release) that `install.sh` downloads and installed apps update from. On your fork, the same
+   job publishes your own build, so `FACEORB_REPO=<your fork>` installs it.
 
 Add a test when you fix a bug or add behavior other code relies on.
 
