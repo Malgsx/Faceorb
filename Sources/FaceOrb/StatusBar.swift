@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class AppWindows: ObservableObject {
     @Published var dropdownPinned = false
+    /// Set by the status bar: hides the dropdown (unless pinned) so a window it opens isn't covered.
+    var closeDropdown: () -> Void = {}
     private let model: AppModel
     private let updater: Updater
     private var window: NSWindow?
@@ -45,6 +47,7 @@ final class AppWindows: ObservableObject {
 
     func showReview(_ section: ReviewSection? = nil) {
         if let section { model.section = section }
+        if !dropdownPinned { closeDropdown() }
         if window == nil {
             let controller = NSHostingController(rootView: ReviewWindow()
                 .environmentObject(model)
@@ -87,6 +90,7 @@ final class StatusBarController: NSObject {
     private var panel: DropdownPanel?
     private var hosting: NSHostingController<AnyView>?
     private var globalMonitor: Any?
+    private var localMonitor: Any?
     private var resignObserver: NSObjectProtocol?
     private var cancellables = Set<AnyCancellable>()
     private var sizeObservation: NSKeyValueObservation?
@@ -99,6 +103,7 @@ final class StatusBarController: NSObject {
         self.updater = updater
         self.windows = windows
         super.init()
+        windows.closeDropdown = { [weak self] in self?.close() }
         if let button = item.button {
             button.target = self
             button.action = #selector(toggle)
@@ -231,6 +236,18 @@ final class StatusBarController: NSObject {
                 self.close()
             }
         }
+        // Clicking into one of FaceOrb's own windows (the review window, its sheets) moves the focus
+        // there, so the dropdown gets out of the way. Open panels run modally and are left alone, and
+        // the status item's own click is left to toggle().
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            MainActor.assumeIsolated {
+                if let self, !self.windows.dropdownPinned, NSApp.modalWindow == nil,
+                   let w = event.window, w !== self.panel, w !== self.item.button?.window, w.styleMask.contains(.titled) {
+                    self.close()
+                }
+            }
+            return event
+        }
         // Command-Tab and Dock switches don't click anywhere, so close when FaceOrb stops being active.
         // Activation can flicker while windows are dragged or sheets/open panels appear, so re-check after a short delay.
         resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
@@ -253,6 +270,8 @@ final class StatusBarController: NSObject {
     private func removeMonitor() {
         if let m = globalMonitor { NSEvent.removeMonitor(m) }
         globalMonitor = nil
+        if let m = localMonitor { NSEvent.removeMonitor(m) }
+        localMonitor = nil
         if let o = resignObserver { NotificationCenter.default.removeObserver(o) }
         resignObserver = nil
     }
