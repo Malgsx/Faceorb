@@ -67,6 +67,8 @@ nav button{border:0;border-bottom:2px solid transparent;border-radius:0;backgrou
 nav button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
 nav .n{display:inline-block;min-width:22px;padding:0 6px;margin-left:6px;border-radius:10px;background:var(--chip);font-size:12px;font-variant-numeric:tabular-nums}
 nav .spacer{flex:1}
+nav .tabs{display:flex;gap:4px}
+nav .s{display:none}
 main{padding:16px 16px 60px}
 .toolbar{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .toolbar h2{margin:0;font-size:20px}
@@ -159,15 +161,25 @@ main{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
   header{gap:10px;padding:12px max(12px,env(safe-area-inset-right)) 12px max(12px,env(safe-area-inset-left));padding-top:max(12px,env(safe-area-inset-top))}
   .brand,.import{flex-basis:100%}
   .orb{width:40px;height:40px}
-  nav{padding:6px 8px 0;gap:0}
-  nav button{padding:8px 10px}
-  main{padding:12px 12px calc(80px + env(safe-area-inset-bottom))}
+  /* Phones: the tabs become a bottom bar; Phone, Cutoffs and Save stay at the top. */
+  nav{padding:6px 8px;gap:4px;border-bottom:1px solid var(--line);overflow:visible}
+  nav .spacer{display:none}
+  nav>button{flex:1;padding:6px 4px;border:1px solid var(--line);border-radius:8px;min-height:36px}
+  nav .tabs{position:fixed;left:0;right:0;bottom:0;z-index:15;gap:0;background:var(--panel);border-top:1px solid var(--line);
+    padding:0 max(4px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px,env(safe-area-inset-left))}
+  nav .tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 2px 6px;min-height:52px;font-size:12px;border-bottom:0;border-top:2px solid transparent}
+  nav .tabs button.on{border-top-color:var(--accent)}
+  nav .l{display:none}
+  nav .s{display:inline}
+  nav .n{margin-left:0;min-width:0;font-size:11px}
+  main{padding:12px 12px calc(90px + env(safe-area-inset-bottom))}
   .grid{grid-template-columns:repeat(2,1fr);gap:10px}
   .people{grid-template-columns:repeat(3,1fr);gap:10px}
   .face{width:88px;height:88px}
   .inset{width:48px;height:48px}
-  .cutoffs{position:fixed;left:12px;right:12px;width:auto!important;top:auto;bottom:calc(12px + env(safe-area-inset-bottom));max-height:70vh}
-  .bulk{bottom:calc(12px + env(safe-area-inset-bottom))}
+  .cutoffs{position:fixed;left:12px;right:12px;width:auto!important;top:auto;bottom:calc(72px + env(safe-area-inset-bottom));max-height:70vh;z-index:16}
+  .bulk,.toast{bottom:calc(72px + env(safe-area-inset-bottom))}
+  .lb{background:#0b0b0c}
   .lb .stage{padding:0 8px 8px;margin-bottom:calc(70px + env(safe-area-inset-bottom))}
   .lb .frame img{max-width:calc(100vw - 16px);max-height:calc(100vh - 190px);max-height:calc(100dvh - 190px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
   .lb .top{padding-left:12px;padding-right:8px}
@@ -191,7 +203,7 @@ main{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
   <form class="import" id="importForm">
     <input type="text" id="link" placeholder="Paste an album or photo link" autocomplete="off">
     <button class="primary" id="importBtn">Import</button>
-    <button type="button" class="link" id="folderBtn">or scan a folder on this Mac…</button>
+    <button type="button" class="link" id="folderBtn">or scan a folder on your Mac…</button>
   </form>
   <form class="import" id="folderForm" hidden>
     <input type="text" id="folder" placeholder="/Users/you/Pictures/Party" autocomplete="off">
@@ -201,11 +213,13 @@ main{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
 </header>
 <div class="topbar">
 <nav id="nav">
-  <button data-tab="review">Needs review<span class="n" id="n-review">0</span></button>
-  <button data-tab="mine">My photos<span class="n" id="n-mine">0</span></button>
-  <button data-tab="others">Everyone else<span class="n" id="n-others">0</span></button>
-  <button data-tab="people">Who you are</button>
-  <button data-tab="privacy">Privacy &amp; data</button>
+  <div class="tabs">
+  <button data-tab="review"><span class="l">Needs review</span><span class="s">Review</span><span class="n" id="n-review">0</span></button>
+  <button data-tab="mine"><span class="l">My photos</span><span class="s">Mine</span><span class="n" id="n-mine">0</span></button>
+  <button data-tab="others"><span class="l">Everyone else</span><span class="s">Others</span><span class="n" id="n-others">0</span></button>
+  <button data-tab="people"><span class="l">Who you are</span><span class="s">You</span></button>
+  <button data-tab="privacy"><span class="l">Privacy &amp; data</span><span class="s">Privacy</span></button>
+  </div>
   <span class="spacer"></span>
   <button id="phoneBtn" hidden>Phone</button>
   <button id="cutBtn">Cutoffs</button>
