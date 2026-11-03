@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb (Debian 12, no Apple SDKs) for FaceOrb: installs the Swift toolchain and
+# prebuilds the cross-platform targets (FaceOrbCore, FaceOrbWeb, faceorb-sim) and their tests, so
+# `swift build` and `swift test` start warm. The macOS app itself builds only on a Mac.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+SWIFT_VERSION=$(cat .swift-version)   # the toolchain pin, shared with swiftly
+SWIFTLY_HOME_DIR="$HOME/.local/share/swiftly"
+step() { printf '\n==> %s\n' "$*"; }
+timed() { local t=$SECONDS; "$@"; echo "    ($((SECONDS - t))s)"; }
+
+# Swift's runtime and build dependencies on Debian 12 (what swiftly would ask for).
+PACKAGES=(binutils git gnupg2 libc6-dev libcurl4-openssl-dev libedit2 libedit-dev libgcc-12-dev libpython3-dev
+  libsqlite3-0 libstdc++-12-dev libxml2-dev libncurses-dev libz3-dev pkg-config tzdata unzip zip zlib1g-dev)
+missing=()
+for p in "${PACKAGES[@]}"; do dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "ok installed" || missing+=("$p"); done
+if (( ${#missing[@]} )); then
+  step "Installing system packages: ${missing[*]}"
+  timed sudo DEBIAN_FRONTEND=noninteractive bash -c 'apt-get update -qq && apt-get install -y -qq --no-install-recommends "$@"' _ "${missing[@]}"
+fi
+
+if [[ ! -x "$SWIFTLY_HOME_DIR/bin/swiftly" ]]; then
+  step "Installing swiftly"
+  tmp=$(mktemp -d)
+  curl -fsSL "https://download.swift.org/swiftly/linux/swiftly-$(uname -m).tar.gz" | tar -xz -C "$tmp"
+  timed "$tmp/swiftly" init --no-modify-profile --skip-install --quiet-shell-followup --assume-yes
+  rm -rf "$tmp"
+fi
+# shellcheck disable=SC1091
+. "$SWIFTLY_HOME_DIR/env.sh"
+
+if ! swiftly list 2>/dev/null | grep -q "$SWIFT_VERSION"; then
+  step "Installing Swift $SWIFT_VERSION"
+  timed swiftly install "$SWIFT_VERSION" --use --assume-yes
+else
+  swiftly use --global-default "$SWIFT_VERSION" --assume-yes >/dev/null
+fi
+
+# Login shells (Amp, supervised services, the terminal) get swift on PATH.
+marker="# FaceOrb: Swift toolchain (swiftly)"
+if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+  printf '\n%s\n[ -f "%s/env.sh" ] && . "%s/env.sh"\n' "$marker" "$SWIFTLY_HOME_DIR" "$SWIFTLY_HOME_DIR" >> "$HOME/.bash_profile"
+fi
+
+step "Building the cross-platform targets and tests"
+swift --version
+timed swift build --build-tests
+
+mkdir -p "$HOME/.config/amp"
+if ! grep -Fq "FaceOrb orb notes" "$HOME/.config/amp/AGENTS.md" 2>/dev/null; then
+  cat >> "$HOME/.config/amp/AGENTS.md" <<'EOF'
+
+# FaceOrb orb notes
+- Swift is installed with swiftly (`~/.local/share/swiftly`); login shells have it on PATH.
+- On this Linux orb, `swift build` and `swift test` cover FaceOrbCore, FaceOrbWeb and faceorb-sim.
+  The menu bar app (FaceOrb, FaceOrbKit) needs macOS: start a Mac sidecar for it.
+EOF
+fi
+step "Done"
