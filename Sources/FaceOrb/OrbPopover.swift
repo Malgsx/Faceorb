@@ -2,6 +2,7 @@ import AppKit
 import FaceOrbCore
 import FaceOrbKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The menu bar dropdown. Everything the review window and web app can do is here too:
 /// import, a one-at-a-time review card, browsing the three piles, picking yourself, cutoffs and privacy.
@@ -77,7 +78,8 @@ struct OrbPopover: View {
             case .updating:
                 banner {
                     ProgressView().controlSize(.small)
-                    Text("Rebuilding FaceOrb… this can take a minute. It will reopen by itself.")
+                    Text(updater.rebuilds ? "Rebuilding FaceOrb… this can take a minute. It will reopen by itself."
+                                          : "Downloading the update… FaceOrb will reopen by itself.")
                         .font(.caption).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -92,8 +94,10 @@ struct OrbPopover: View {
                         }
                         HStack(spacing: 8) {
                             Spacer(minLength: 0)
-                            Button("Show Log") { NSWorkspace.shared.open(updater.logURL) }
-                                .controlSize(.small)
+                            if updater.rebuilds {
+                                Button("Show Log") { NSWorkspace.shared.open(updater.logURL) }
+                                    .controlSize(.small)
+                            }
                             Button("Try Again") { updater.update() }
                                 .controlSize(.small)
                             Button { updater.dismissError() } label: { Image(systemName: "xmark") }
@@ -161,7 +165,7 @@ struct OrbPopover: View {
     private var headline: String {
         if model.activity.isBusy { return model.activity.label }
         if let e = model.lastError { return e }
-        if model.lib.photos.isEmpty { return "Paste an album link or pick a folder to start." }
+        if model.lib.photos.isEmpty { return "Paste an album link or add photos to start." }
         if !model.isEnrolled { return "\(model.lib.photos.count) photos scanned. Show FaceOrb who you are." }
         let r = model.count(.review)
         return r > 0 ? "\(r) photos need a quick yes or no." : "All sorted. \(model.count(.mine)) photos of you."
@@ -180,6 +184,7 @@ struct HomeTab: View {
     /// What "Start over" or "Remove…" is asking to clear: one album, or every album when `source` is nil.
     @State private var clearing: ClearRequest?
     @State private var forgetMeToo = false
+    @State private var dropTargeted = false
 
     private struct ClearRequest {
         var source: String?
@@ -237,6 +242,12 @@ struct HomeTab: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Anywhere on Home takes dropped photos, folders and .zip files.
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            guard !model.activity.isBusy else { return false }
+            AddPhotosArea.loadURLs(providers) { model.importItems($0) }
+            return true
+        }
     }
 
     private var addAlbum: some View {
@@ -262,9 +273,7 @@ struct HomeTab: View {
             Button("Import", action: importLink)
                 .disabled(link.isEmpty || model.activity.isBusy)
         }
-        Button { chooseFolder() } label: { Label("Choose a folder of photos…", systemImage: "folder") }
-            .buttonStyle(.link)
-            .disabled(model.activity.isBusy)
+        AddPhotosArea(targeted: dropTargeted, busy: model.activity.isBusy, choose: chooseItems)
         }
     }
 
@@ -355,14 +364,61 @@ struct HomeTab: View {
         link = ""
     }
 
-    private func chooseFolder() {
+    private func chooseItems() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = "Scan"
-        panel.message = "FaceOrb reads photos in place. It doesn't copy or change them."
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image, .zip, .folder]
+        panel.prompt = "Add"
+        panel.message = "Choose photos, folders or .zip files, from this Mac, iCloud Drive, Google Drive or anywhere else in Finder. Folders are read in place; photos and .zip files are copied."
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK, let url = panel.url { model.importFolder(url) }
+        if panel.runModal() == .OK { model.importItems(panel.urls) }
+    }
+}
+
+/// The "add photos" drop area: drop photos, folders or .zip files, or click to choose them.
+struct AddPhotosArea: View {
+    var targeted: Bool
+    var busy: Bool
+    var choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.arrow.down.on.square").font(.title3).foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Add photos, a folder or a .zip…").foregroundStyle(.tint)
+                    Text("Or drop them here, from Finder, iCloud Drive or Google Drive")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(targeted ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(targeted ? Color.accentColor : Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel("Add photos, a folder or a zip file")
+    }
+
+    /// File URLs from a drop, delivered together on the main actor.
+    static func loadURLs(_ providers: [NSItemProvider], then done: @escaping @MainActor ([URL]) -> Void) {
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var urls: [URL] = []
+        for provider in providers where provider.canLoadObject(ofClass: URL.self) {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.isFileURL { lock.lock(); urls.append(url); lock.unlock() }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { MainActor.assumeIsolated { done(urls) } }
     }
 }
 

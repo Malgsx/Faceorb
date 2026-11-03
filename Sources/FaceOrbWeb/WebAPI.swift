@@ -52,6 +52,10 @@ public enum BackendAction: Sendable {
     case deleteLastExport
     /// Opens the web app to phones on the local network, or closes it again.
     case phoneAccess(Bool)
+    /// One file from the browser (a photo, or a .zip of photos), added to the album for `batch`.
+    case upload(Data, name: String, batch: String, title: String)
+    /// The browser finished uploading `batch`: scan the new photos.
+    case uploadDone(batch: String)
 }
 
 /// JSON API + static web app, protected for a loopback server:
@@ -223,6 +227,16 @@ public final class WebAPI: @unchecked Sendable {
     }
 
     private func post(_ req: HTTPServer.Request) async -> HTTPServer.Response {
+        if req.path == "/api/upload" {
+            guard let batch = req.query["batch"], Uploads.isValidBatch(batch), let name = req.query["name"], !name.isEmpty,
+                  !req.body.isEmpty else { return .text("bad request", status: 400) }
+            let title = req.query["title"].flatMap { $0.isEmpty ? nil : String($0.prefix(120)) } ?? "Uploaded photos"
+            do {
+                return .json(ActionResult(ok: true, message: try await backend.perform(.upload(req.body, name: name, batch: batch, title: title))))
+            } catch {
+                return .json(ActionResult(ok: false, message: error.localizedDescription), status: 400)
+            }
+        }
         if req.path == "/api/selfie" {
             do {
                 let ok = try await backend.enrollSelfie(req.body)
@@ -276,6 +290,9 @@ public final class WebAPI: @unchecked Sendable {
             action = .export(opts, folder: folder)
         case "/api/delete-last-export": action = .deleteLastExport
         case "/api/phone-access": action = .phoneAccess(body["on"] as? Bool ?? false)
+        case "/api/upload-done":
+            guard let batch = str("batch"), Uploads.isValidBatch(batch) else { return .text("bad request", status: 400) }
+            action = .uploadDone(batch: batch)
         case "/api/import":
             guard let link = str("link") else { return .text("bad request", status: 400) }
             action = .importLink(link)
@@ -338,6 +355,15 @@ public actor HeadlessBackend: FaceOrbBackend {
             try store?.deleteAlbumCopies()
             message = "Removed \(removed) photos."
         case .cancel: break
+        case .upload(let data, let name, let batch, let title):
+            // Kept so the photos show up; finding faces in them needs the Mac app.
+            guard let store else { throw NSError(domain: "FaceOrb", code: 1, userInfo: [NSLocalizedDescriptionKey: "Uploading needs a library folder."]) }
+            let source = Uploads.source(batch: batch)
+            let photos = try Uploads.save(data: data, name: name, source: source, into: store.albumFolder(for: source))
+            let known = Set(lib.photos.map(\.id))
+            lib.photos += photos.filter { !known.contains($0.id) }
+            lib.albums[source] = title
+        case .uploadDone: message = "Uploaded. Finding faces needs the Mac app."
         case .importLink, .importFolder, .export, .deleteLastExport, .phoneAccess:
             throw NSError(domain: "FaceOrb", code: 1, userInfo: [NSLocalizedDescriptionKey: "Importing and saving photos need the Mac app."])
         }

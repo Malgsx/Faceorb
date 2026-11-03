@@ -43,7 +43,8 @@ public final class HTTPServer: @unchecked Sendable {
     private let handler: Handler
     private var listenFD: Int32 = -1
     public private(set) var port: UInt16 = 0
-    public var maxBodyBytes = 40 * 1024 * 1024
+    /// Uploads from phones include .zip files of whole albums.
+    public var maxBodyBytes = 512 * 1024 * 1024
 
     public init(handler: @escaping Handler) { self.handler = handler }
 

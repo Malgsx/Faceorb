@@ -2,7 +2,8 @@
 //   faceorb-sim pixieset <share-link>              list a public Pixieset gallery
 //   faceorb-sim link <url> [download-dir]          what an album link holds; downloads it when given a folder
 //   faceorb-sim match <faces.json> [cluster-index]   cluster faces, enrol one person, bucket photos
-//   faceorb-sim serve <faces.json> <album-dir> [port]   run the web app on that data (no enrolment yet)
+//   faceorb-sim serve <faces.json> <album-dir> [port]   run the web app on that data (no enrolment yet;
+//                                                       FACEORB_DATA=<dir> keeps uploads there)
 // faces.json comes from reference/embed_reference.py (same alignment + SFace model as the app).
 import Foundation
 import FaceOrbCore
@@ -117,7 +118,9 @@ case "serve":
         return p
     }
     lib.albums["pixieset:sample"] = "Sample album"
-    let api = WebAPI(backend: HeadlessBackend(lib: lib), token: ProcessInfo.processInfo.environment["FACEORB_TOKEN"] ?? WebAPI.makeToken())
+    // FACEORB_DATA: a folder to keep uploads in (without it, uploading is turned off).
+    let store = ProcessInfo.processInfo.environment["FACEORB_DATA"].map { LibraryStore(root: URL(fileURLWithPath: $0)) }
+    let api = WebAPI(backend: HeadlessBackend(lib: lib, store: store), token: ProcessInfo.processInfo.environment["FACEORB_TOKEN"] ?? WebAPI.makeToken())
     if let host = ProcessInfo.processInfo.environment["FACEORB_ALLOWED_HOST"] { api.extraAllowedHosts = [host] }
     let server = HTTPServer { await api.handle($0) }
     api.port = try server.start(preferredPort: args.count > 4 ? UInt16(args[4])! : 0)

@@ -210,14 +210,18 @@ public struct LinkImporter: Sendable {
         case .zip(let file):
             defer { try? FileManager.default.removeItem(at: file) }
             progress(0, 1)
-            try Self.unzip(file, into: folder)
+            // Keep what was unpacked even if some entries failed (see Uploads.save).
+            let unzipError: Error?
+            do { try Self.unzip(file, into: folder); unzipError = nil } catch { unzipError = error }
             progress(1, 1)
-            return FolderImporter.scan(folder)
+            let photos = FolderImporter.scan(folder)
                 .filter { !$0.localPath.contains("/__MACOSX/") }
                 .map { p in
                     let rel = String(p.localPath.dropFirst(folder.standardizedFileURL.path.count))
                     return Photo(id: "\(album.source)\(rel)", name: p.name, source: album.source, localPath: p.localPath)
                 }
+            if photos.isEmpty, let unzipError { throw unzipError }
+            return photos
         case .images(let urls, let fallback):
             do {
                 return try await downloadImages(urls, album: album, to: folder, concurrency: concurrency, progress: progress)

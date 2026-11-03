@@ -137,6 +137,12 @@ button.primary kbd{color:var(--ink)}
 .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:8px 16px;box-shadow:0 6px 24px #0003;z-index:30}
 .err{color:var(--review)}
 .lb .choice{display:flex;gap:8px}
+.drop{flex:1 1 100%;display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;padding:4px 10px 4px 4px;border:1.5px dashed var(--line);border-radius:10px;position:relative}
+.drop.over{border-color:var(--accent);background:#3a5bd914}
+.drop .dropbtn{flex:1 1 auto;display:flex;align-items:center;gap:12px;border:0;background:none;padding:6px 8px;text-align:left;min-width:0}
+.drop .ic{flex:none;color:var(--accent)}
+.drop b{display:block;color:var(--accent);font-weight:600}
+.drop .bar{position:absolute;left:10px;right:10px;bottom:3px;margin:0;height:3px}
 #phonePanel{width:min(340px,calc(100vw - 32px))}
 #phonePanel .qr{display:block;width:220px;height:220px;margin:6px auto 10px;image-rendering:pixelated;background:#fff;padding:10px;border-radius:10px}
 #phonePanel .url{font:12px ui-monospace,monospace;word-break:break-all;color:var(--muted)}
@@ -205,6 +211,14 @@ main{padding-bottom:calc(60px + env(safe-area-inset-bottom))}
     <button class="primary" id="importBtn">Import</button>
     <button type="button" class="link" id="folderBtn">or scan a folder on your Mac…</button>
   </form>
+  <div class="drop" id="drop">
+    <button type="button" class="dropbtn" id="upBtn"><svg class="ic" aria-hidden="true" viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5M5 14v5h14v-5"/></svg>
+      <span><b id="upTitle">Upload photos</b><span class="small" id="upHint"></span></span></button>
+    <button type="button" class="link" id="upFolderBtn" hidden>Upload a folder…</button>
+    <div class="bar" id="upBar" hidden><i></i></div>
+  </div>
+  <input type="file" id="upFiles" multiple accept="image/*,.heic,.heif,.zip,application/zip" hidden>
+  <input type="file" id="upFolder" webkitdirectory multiple hidden>
   <form class="import" id="folderForm" hidden>
     <input type="text" id="folder" placeholder="/Users/you/Pictures/Party" autocomplete="off">
     <button class="primary">Scan folder</button>
@@ -318,7 +332,7 @@ function render() {
   const n = S.stats.photos;
   $("#status").innerHTML = S.busy ? esc(S.activity)
     : S.error ? '<span class="err">' + esc(S.error) + "</span>"
-    : !n ? "Paste an album link or scan a folder to start."
+    : !n ? "Paste an album link or upload photos to start."
     : !S.enrolled ? n + " photos scanned. Show FaceOrb who you are."
     : (S.counts.review || 0) ? (S.counts.review) + " photos need a quick yes or no."
     : "All sorted. " + (S.counts.mine || 0) + " photos of you.";
@@ -615,6 +629,89 @@ $("#folderForm").onsubmit = async e => {
   await api("/api/import-folder", {path}); $("#folderCancel").click(); refresh(true);
 };
 $("#stop").onclick = () => api("/api/cancel", {}).then(() => refresh());
+
+// Uploads: photos or .zip files from the device (photo library, Files, iCloud Drive, Google Drive),
+// a whole folder in desktop browsers, or files and folders dropped anywhere on the page.
+// Each file is its own request; the Mac copies them into one new album, then scans it.
+const canPickFolder = !touch && "webkitdirectory" in document.createElement("input");
+$("#upFolderBtn").hidden = !canPickFolder;
+$("#folderBtn").hidden = remote;   // a path on the Mac means little on a phone
+$("#upHint").textContent = touch
+  ? " From Photos, Files, iCloud Drive or Google Drive. A whole folder? Compress it in Files, then upload the .zip."
+  : " Photos or .zip files from this computer, iCloud Drive or Google Drive. Or drop them, or a folder, anywhere here.";
+$("#upBtn").onclick = () => $("#upFiles").click();
+$("#upFolderBtn").onclick = () => $("#upFolder").click();
+$("#upFiles").onchange = e => { const f = [...e.target.files]; e.target.value = ""; upload(f); };
+$("#upFolder").onchange = e => {
+  const f = [...e.target.files]; e.target.value = "";
+  upload(f, f.length && f[0].webkitRelativePath ? f[0].webkitRelativePath.split("/")[0] : "");
+};
+const UPLOADABLE = /\.(jpe?g|png|heic|heif|webp|tiff?|zip)$/i;
+let uploading = false;
+async function upload(files, title) {
+  files = files.filter(f => UPLOADABLE.test(f.name) || f.type.startsWith("image/") || f.type.includes("zip"));
+  if (!files.length) return toast("Choose photos or .zip files.", true);
+  if (uploading) return toast("Still uploading the last ones.", true);
+  uploading = true; $("#upBtn").disabled = true;
+  const batch = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  title = title || (files.length === 1 ? files[0].name.replace(/\.[^.]+$/, "") : "Uploaded " + new Date().toLocaleDateString());
+  let next = 0, done = 0, failed = 0, firstError = "";
+  const show = () => {
+    $("#upTitle").textContent = "Uploading " + done + " of " + files.length + "…";
+    $("#upBar").hidden = false; $("#upBar i").style.width = (done / files.length * 100) + "%";
+  };
+  async function worker() {
+    while (next < files.length) {
+      const f = files[next++];
+      try {
+        const r = await fetch("/api/upload?batch=" + batch + "&name=" + encodeURIComponent(f.name) + "&title=" + encodeURIComponent(title),
+          {method: "POST", headers: {"X-FaceOrb": "1"}, body: f});
+        if (r.status === 403) { location.reload(); return; }
+        const d = await r.json().catch(() => ({ok: false}));
+        if (!d.ok) { failed++; firstError = firstError || d.message || ""; }
+      } catch (e) { failed++; }
+      done++; show();
+    }
+  }
+  show();
+  try {
+    await Promise.all([worker(), worker(), worker()]);
+    if (failed < files.length) await api("/api/upload-done", {batch});
+    if (failed) toast(failed + " of " + files.length + " couldn't be added" + (firstError ? ": " + firstError : "."), true);
+  } finally {
+    uploading = false; $("#upBtn").disabled = false;
+    $("#upTitle").textContent = "Upload photos"; $("#upBar").hidden = true;
+    refresh(true);
+  }
+}
+// Files and whole folders dropped on the page (desktop browsers).
+async function droppedFiles(dt) {
+  const entries = [...dt.items].map(i => i.webkitGetAsEntry ? i.webkitGetAsEntry() : null).filter(Boolean);
+  if (!entries.length) return {files: [...dt.files], title: ""};
+  const files = [];
+  async function walk(e) {
+    if (e.isFile) { try { files.push(await new Promise((ok, no) => e.file(ok, no))); } catch (_) {} return; }
+    const reader = e.createReader();
+    for (;;) {
+      const batch = await new Promise((ok, no) => reader.readEntries(ok, no));
+      if (!batch.length) break;
+      for (const c of batch) await walk(c);
+    }
+  }
+  for (const e of entries) await walk(e);
+  return {files, title: entries.length === 1 && entries[0].isDirectory ? entries[0].name : ""};
+}
+let dragDepth = 0;
+const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+document.addEventListener("dragenter", e => { if (hasFiles(e)) { dragDepth++; $("#drop").classList.add("over"); } });
+document.addEventListener("dragleave", e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; $("#drop").classList.remove("over"); } });
+document.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener("drop", async e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $("#drop").classList.remove("over");
+  const {files, title} = await droppedFiles(e.dataTransfer);
+  upload(files, title);
+});
 $("#csvBtn").onclick = () => { location.href = "/export.csv"; };
 // The Cutoffs and Save panels drop down under the tab bar; the tab button, ×, Esc or a click elsewhere closes them.
 function closePanels() {

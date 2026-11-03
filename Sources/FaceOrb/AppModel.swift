@@ -11,7 +11,7 @@ final class AppModel: ObservableObject {
         case importing(done: Int, total: Int)
         case analyzing(done: Int, total: Int)
         case enrolling
-        case readingFolder
+        case readingFolder   // also copying picked or dropped files
         case exporting(done: Int, total: Int)
 
         var isBusy: Bool { self != .idle }
@@ -21,7 +21,7 @@ final class AppModel: ObservableObject {
             case .importing(let d, let t): "Downloading album… \(d)/\(t)"
             case .analyzing(let d, let t): "Finding faces… \(d)/\(t)"
             case .enrolling: "Learning your face…"
-            case .readingFolder: "Looking for photos…"
+            case .readingFolder: "Adding photos…"
             case .exporting(let d, let t): "Saving photos… \(d)/\(t)"
             }
         }
@@ -35,7 +35,11 @@ final class AppModel: ObservableObject {
 
     @Published private(set) var lib: Library
     @Published private(set) var matches: [String: PhotoMatch] = [:]
-    @Published private(set) var activity: Activity = .idle
+    @Published private(set) var activity: Activity = .idle {
+        didSet { if activity == .idle && scanWhenIdle { scanWhenIdle = false; resumePendingScan() } }
+    }
+    /// Photos arrived (uploads from a phone) while FaceOrb was busy with something other than scanning.
+    private var scanWhenIdle = false
     @Published var lastError: String?
     @Published var notice: String?
     @Published var section: ReviewSection = .bucket(.review)
@@ -170,6 +174,7 @@ final class AppModel: ObservableObject {
     }
 
     func cancel() {
+        scanWhenIdle = false
         work?.cancel()
         work = nil
         activity = .idle
@@ -223,20 +228,79 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func importFolder(_ folder: URL) {
+    func importFolder(_ folder: URL) { importItems([folder]) }
+
+    /// Adds what the user picked or dropped: folders are read in place; photos and .zip files
+    /// (from iCloud Drive, Google Drive, AirDrop, …) are copied into FaceOrb's own album folder.
+    func importItems(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        guard !activity.isBusy else { lastError = "FaceOrb is busy. Try again when it finishes."; return }
         lastError = nil
         activity = .readingFolder
         work = Task {
-            // Off the main thread: a big folder or a network drive can take a while to walk.
-            let photos = await Task.detached(priority: .userInitiated) { FolderImporter.scan(folder) }.value
+            var added = 0, skipped: [String] = []
+            let source = Uploads.source(batch: String(UUID().uuidString.prefix(8)).lowercased())
+            let files = urls.filter { !$0.hasDirectoryPath && !Self.isFolder($0) }
+            let title = files.count == 1 ? files[0].deletingPathExtension().lastPathComponent
+                : "Added \(Date().formatted(date: .abbreviated, time: .shortened))"
+            for url in urls {
+                if Task.isCancelled { return }
+                if Self.isFolder(url) {
+                    // Off the main thread: a big folder or a network drive can take a while to walk.
+                    let photos = await Task.detached(priority: .userInitiated) { FolderImporter.scan(url) }.value
+                    guard !photos.isEmpty else { skipped.append(url.lastPathComponent); continue }
+                    addPhotos(photos, source: photos[0].source, title: url.lastPathComponent, origin: AlbumOrigin())
+                    added += photos.count
+                } else {
+                    let folder = store.albumFolder(for: source)
+                    do {
+                        // Cloud files that aren't on this Mac yet download as they're read.
+                        let photos = try await Task.detached(priority: .userInitiated) {
+                            try Uploads.save(file: url, name: url.lastPathComponent, source: source, into: folder)
+                        }.value
+                        guard !photos.isEmpty else { skipped.append(url.lastPathComponent); continue }
+                        addPhotos(photos, source: source, title: title, origin: AlbumOrigin())
+                        added += photos.count
+                    } catch {
+                        skipped.append(url.lastPathComponent)
+                    }
+                }
+            }
             guard !Task.isCancelled else { return }
-            if photos.isEmpty {
-                lastError = "No photos found in \(folder.lastPathComponent)."
+            if added == 0 {
+                lastError = "No photos found in \(skipped.first ?? "that")\(skipped.count > 1 ? " and \(skipped.count - 1) more" : "")."
             } else {
-                addPhotos(photos, source: photos[0].source, title: folder.lastPathComponent, origin: AlbumOrigin())
+                if !skipped.isEmpty { notice = "Skipped \(skipped.count) that weren't photos: \(skipped.prefix(3).joined(separator: ", "))." }
                 await analyzePending()
             }
             activity = .idle
+        }
+    }
+
+    private static func isFolder(_ url: URL) -> Bool {
+        var dir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &dir) && dir.boolValue
+            && url.pathExtension.lowercased() != "app"
+    }
+
+    /// One file uploaded from the web app (a phone, usually). Scanned when the upload finishes.
+    func addUpload(_ data: Data, name: String, batch: String, title: String) async throws {
+        let source = Uploads.source(batch: batch), folder = store.albumFolder(for: source)
+        try DiskCheck.preflight(folder: folder, needed: Int64(data.count) * 3)
+        let photos = try await Task.detached(priority: .userInitiated) {
+            try Uploads.save(data: data, name: name, source: source, into: folder)
+        }.value
+        addPhotos(photos, source: source, title: title, origin: AlbumOrigin())
+    }
+
+    /// The web app finished an upload: scan what arrived, now or after the current task.
+    func scanUploads() -> String {
+        let n = pendingAnalysis
+        guard n > 0 else { return "Nothing new to scan." }
+        switch activity {
+        case .idle: resumePendingScan(); return "Finding faces in \(n) new photos…"
+        case .analyzing: return "Added \(n) photos. They're scanned after the current batch."   // analyzePending picks them up
+        default: scanWhenIdle = true; return "Added \(n) photos. FaceOrb scans them when it finishes what it's doing."
         }
     }
 
@@ -276,6 +340,7 @@ final class AppModel: ObservableObject {
         var detail: String {
             if let folder { return (folder.path as NSString).abbreviatingWithTildeInPath }
             if let link { return link.host.map { $0 + link.path } ?? link.absoluteString }
+            if source.hasPrefix("upload:") { return "Added files, copied to this Mac" }
             return "Downloaded copies on this Mac"
         }
     }
@@ -343,8 +408,8 @@ final class AppModel: ObservableObject {
 
     /// Analyses photos in parallel on background threads, saving every batch so a quit
     /// mid-scan loses little.
-    func analyzePending() async {
-        let pending = lib.photos.filter { !$0.analyzed }
+    func analyzePending(skipping tried: Set<String> = []) async {
+        let pending = lib.photos.filter { !$0.analyzed && !tried.contains($0.id) }
         guard !pending.isEmpty else { return }
         let embedder: FaceEmbedder
         do { embedder = try loadEmbedder() } catch { lastError = error.localizedDescription; return }
@@ -380,6 +445,12 @@ final class AppModel: ObservableObject {
             lastError = "\(failed) \(failed == 1 ? "photo" : "photos") couldn't be scanned. FaceOrb will try \(failed == 1 ? "it" : "them") again next time it starts."
         }
         if lib.settings.forgetBystandersAutomatically && isEnrolled { forgetBystanders() }
+        // Photos added while this ran (uploads from a phone, say) are scanned too. Ones that just
+        // failed are skipped, so this ends.
+        let attempted = tried.union(pending.map(\.id))
+        if !Task.isCancelled, lib.photos.contains(where: { !$0.analyzed && !attempted.contains($0.id) }) {
+            await analyzePending(skipping: attempted)
+        }
     }
 
     private func flush(_ batch: inout [(String, [Face])]) {

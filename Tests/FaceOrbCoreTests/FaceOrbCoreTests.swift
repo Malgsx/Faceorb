@@ -309,6 +309,49 @@ final class WebAPITests: XCTestCase {
         XCTAssertEqual(state["enrolled"] as? Bool, true, "start over keeps the user's face")
     }
 
+    func testUploadsBecomeOneAlbum() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("faceorb-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let api = WebAPI(backend: HeadlessBackend(lib: Library(), store: LibraryStore(root: root)), token: "k")
+        api.port = 4000
+        let auth = ["host": "127.0.0.1:4000", "cookie": "faceorb=k", "x-faceorb": "1"]
+        func up(_ name: String, _ body: Data, batch: String = "b1", headers: [String: String]? = nil) async -> HTTPServer.Response {
+            await api.handle(HTTPServer.Request(method: "POST", path: "/api/upload",
+                                                query: ["batch": batch, "name": name, "title": "Beach day"], headers: headers ?? auth, body: body))
+        }
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0] + Array(repeating: 1, count: 64))
+        let zip = try Data(contentsOf: Bundle.module.url(forResource: "album", withExtension: "zip", subdirectory: "Fixtures")!)
+
+        var r = await up("IMG_9.jpg", jpeg)
+        XCTAssertEqual(r.status, 200)
+        r = await up("IMG_9.jpg", jpeg)   // the same file twice is kept once
+        XCTAssertEqual(r.status, 200)
+        r = await up("Party.zip", zip)
+        XCTAssertEqual(r.status, 200)
+        r = await up("notes.txt", Data("just text, not a photo".utf8))
+        XCTAssertEqual(r.status, 400)
+        r = await up("IMG_9.jpg", jpeg, batch: "../escape")
+        XCTAssertEqual(r.status, 400, "batch ids can't be paths")
+        r = await up("IMG_9.jpg", jpeg, headers: ["host": "127.0.0.1:4000", "cookie": "faceorb=k"])
+        XCTAssertEqual(r.status, 403, "CSRF guard applies to uploads")
+
+        r = await api.handle(HTTPServer.Request(method: "GET", path: "/api/state", headers: auth))
+        let state = try JSONSerialization.jsonObject(with: r.body) as! [String: Any]
+        let photos = state["photos"] as! [[String: Any]]
+        XCTAssertEqual(photos.compactMap { $0["name"] as? String }.sorted(), ["IMG_1.jpg", "IMG_2.png", "IMG_9.jpg"])
+        XCTAssertEqual(Set(photos.compactMap { $0["album"] as? String }), ["Beach day"])
+        // Copies live in FaceOrb's own album folder, which "remove album" deletes.
+        let folder = LibraryStore(root: root).albumFolder(for: Uploads.source(batch: "b1"))
+        let lib = LibraryStore(root: root).load()
+        XCTAssertEqual(lib.photos.count, 3)
+        for p in lib.photos {
+            // Compared resolved, because macOS reports the temp folder as both /var and /private/var.
+            XCTAssertTrue(URL(fileURLWithPath: p.localPath).resolvingSymlinksInPath().path
+                .hasPrefix(folder.resolvingSymlinksInPath().path + "/"), p.localPath)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: p.localPath), p.localPath)
+        }
+    }
+
     func testServerRoundTrip() async throws {
         let api = WebAPI(backend: HeadlessBackend(lib: Library()), token: "tok")
         let server = HTTPServer { await api.handle($0) }

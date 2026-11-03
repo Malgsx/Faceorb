@@ -20,7 +20,13 @@ final class AppBackend: FaceOrbBackend, @unchecked Sendable {
     }
 
     func perform(_ action: BackendAction) async throws -> String? {
-        try await MainActor.run {
+        // Saving an upload (maybe a big .zip) happens off the main thread.
+        if case .upload(let data, let name, let batch, let title) = action {
+            guard let m = await MainActor.run(body: { model }) else { throw Gone() }
+            try await m.addUpload(data, name: name, batch: batch, title: title)
+            return nil
+        }
+        return try await MainActor.run {
             guard let m = model else { throw Gone() }
             m.notice = nil
             switch action {
@@ -58,6 +64,8 @@ final class AppBackend: FaceOrbBackend, @unchecked Sendable {
                 guard m.lastExport != nil else { return "Nothing to delete." }
                 m.deleteLastExport()
                 return m.lastError ?? m.notice
+            case .upload: return nil   // handled above
+            case .uploadDone: return m.scanUploads()
             case .phoneAccess(let on):
                 m.phoneAccessEnabled = on
                 return on ? "Phone access is on. Scan the code with your phone." : "Phone access is off."
