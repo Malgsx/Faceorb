@@ -145,15 +145,23 @@ final class StatusBarController: NSObject {
 
     /// Waits (up to ~2 s) for the status item to be placed, so a show right after launch isn't positioned off screen.
     func show(attempts: Int = 20) {
-        guard panel?.isVisible != true else { return }
+        guard !panelShowing else { return }
         if let frame = item.button?.window?.frame, frame.minY > 0 || attempts == 0 { open(); return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             MainActor.assumeIsolated { self.show(attempts: attempts - 1) }
         }
     }
 
+    /// Showing on this screen and Space. A panel left "visible" on another Space (a full-screen app
+    /// switched away from it) or covered counts as closed, so clicking the orb brings it back
+    /// instead of hiding something already out of sight.
+    private var panelShowing: Bool {
+        guard let panel, panel.isVisible else { return false }
+        return panel.isOnActiveSpace && panel.occlusionState.contains(.visible)
+    }
+
     @objc private func toggle() {
-        if panel?.isVisible == true { close() } else { open() }
+        if panelShowing { close() } else { open() }
     }
 
     private func makePanel() -> DropdownPanel {
@@ -216,6 +224,7 @@ final class StatusBarController: NSObject {
     }
 
     private func open() {
+        removeMonitor()  // reopening a panel that was out of sight: don't stack a second set of monitors
         let p = panel ?? makePanel()
         panel = p
         resizePanel()
@@ -231,8 +240,13 @@ final class StatusBarController: NSObject {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
                 guard let self, !self.windows.dropdownPinned else { return }
+                // Only the window actually on top at the click counts; a FaceOrb window hidden behind
+                // the app that was clicked (a browser showing the web app) doesn't keep the dropdown open.
+                // The orb itself is left to toggle(): the menu bar may report its clicks here too.
                 let point = NSEvent.mouseLocation
-                if NSApp.windows.contains(where: { $0.isVisible && $0.frame.contains(point) }) { return }
+                if self.item.button?.window?.frame.contains(point) == true { return }
+                let top = NSWindow.windowNumber(at: point, belowWindowWithWindowNumber: 0)
+                if NSApp.window(withWindowNumber: top) != nil { return }
                 self.close()
             }
         }
