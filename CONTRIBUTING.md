@@ -40,6 +40,9 @@ on a Mac; on Linux it runs with any Swift 6 toolchain (see `.swift-version`).
    tests on macOS and Linux. After a merge to `main`, CI also publishes the app (the `app`
    release) that `install.sh` downloads and installed apps update from. On your fork, the same
    job publishes your own build, so `FACEORB_REPO=<your fork>` installs it.
+   If GitHub's macOS runners are out of capacity, the publish watchdog
+   (`.github/workflows/watchdog.yml`) reruns the job until it gets one; a newer push replaces
+   runs still waiting.
 
 Add a test when you fix a bug or add behavior other code relies on.
 

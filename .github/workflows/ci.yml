@@ -4,19 +4,44 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push replaces runs still waiting for a runner, so an older build never publishes over a
+# newer one. scripts/ci-watchdog.sh (watchdog.yml) reruns jobs GitHub never gave a runner.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # The only job that needs a Mac (GitHub's macOS runners are the ones that run out of capacity):
+  # it builds the app for Apple silicon and Intel, runs the tests, and hands the packaged app to
+  # the publish job.
   macos:
     name: macOS app and tests
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - run: swift --version
-      - name: Build the menu bar app
-        run: swift build --product FaceOrb
+      - name: Build the app for Apple silicon and Intel
+        run: FACEORB_UNIVERSAL=1 FACEORB_RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/app" scripts/build-app.sh
       - name: Test
         run: swift test
       - name: Check the scripts parse
         run: for f in install.sh scripts/*.sh .agents/setup .agents/resume; do bash -n "$f"; done
+      - name: Package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir dist
+          ditto -c -k --keepParent build/FaceOrb.app dist/FaceOrb.zip
+          shasum -a 256 dist/FaceOrb.zip | awk '{print $1}' > dist/FaceOrb.zip.sha256
+          plutil -extract FaceOrbSourceVersion raw build/FaceOrb.app/Contents/Info.plist > dist/version.txt
+          lipo -archs build/FaceOrb.app/Contents/MacOS/FaceOrb
+          ls -l dist; cat dist/version.txt
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: app
+          path: dist/
+          retention-days: 7
 
   linux:
     name: Core and web tests (Linux)
@@ -28,32 +53,32 @@ jobs:
       - run: swift test
 
   # Publishes the app for install.sh to download: one rolling release, tag "app", moved to each
-  # main commit that passes the tests.
+  # main commit that passes the tests. Runs on Linux, so it never waits for a Mac.
   release:
     name: Publish the app
     needs: [macos, linux]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Build for Apple silicon and Intel
-        run: FACEORB_UNIVERSAL=1 FACEORB_RELEASE_URL="https://github.com/${{ github.repository }}/releases/download/app" scripts/build-app.sh
-      - name: Package
-        run: |
-          ditto -c -k --keepParent build/FaceOrb.app FaceOrb.zip
-          shasum -a 256 FaceOrb.zip | awk '{print $1}' > FaceOrb.zip.sha256
-          plutil -extract FaceOrbSourceVersion raw build/FaceOrb.app/Contents/Info.plist > version.txt
-          lipo -archs build/FaceOrb.app/Contents/MacOS/FaceOrb
-          ls -l FaceOrb.zip; cat version.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: app
       - name: Publish
         run: |
-          git tag -f app && git push -f origin app
+          # Only the newest main commit publishes; a newer push publishes itself.
+          head=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then echo "main moved on to $head; not publishing $GITHUB_SHA"; exit 0; fi
+          [ "$(sha256sum FaceOrb.zip | cut -d' ' -f1)" = "$(cat FaceOrb.zip.sha256)" ]
+          gh api "repos/$GH_REPO/git/refs/tags/app" -X PATCH -f sha="$GITHUB_SHA" -F force=true >/dev/null 2>&1 \
+            || gh api "repos/$GH_REPO/git/refs" -f ref=refs/tags/app -f sha="$GITHUB_SHA" >/dev/null
           gh release view app >/dev/null 2>&1 || gh release create app --verify-tag --title "FaceOrb (latest build of main)" \
-            --notes "Built by CI from main. Install with: curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash"
+            --notes "Built by CI from main. Install with: curl -fsSL https://raw.githubusercontent.com/$GH_REPO/main/install.sh | bash"
           # The app and its checksum first, then version.txt, which tells installed apps an update is ready.
           gh release upload app FaceOrb.zip FaceOrb.zip.sha256 --clobber
           gh release upload app version.txt --clobber
+          echo "Published $(cat version.txt)"

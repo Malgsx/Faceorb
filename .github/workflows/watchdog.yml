@@ -1,0 +1,28 @@
+name: Publish watchdog
+# Retries CI jobs that GitHub never gave a macOS runner, so the app install.sh downloads catches
+# up with main without anyone rerunning CI by hand. See scripts/ci-watchdog.sh.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: publish-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/ci-watchdog.sh

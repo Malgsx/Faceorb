@@ -18,7 +18,9 @@ face recognition, plus a local web app served by the same process. See README.md
 - On Linux (and in orbs), `swift test` covers FaceOrbCore, FaceOrbWeb and faceorb-sim; `.swift-version` pins Swift.
 - CI (`.github/workflows/ci.yml`) builds the app and tests on macOS, and tests on Linux. On main it
   publishes a universal FaceOrb.zip to the rolling `app` release; `install.sh` downloads that
-  (falls back to building), and prebuilt apps' Updater checks its `version.txt`.
+  (falls back to building), and prebuilt apps' Updater checks its `version.txt`. Only one job needs
+  a Mac; publishing runs on Linux and only for the newest main commit. `watchdog.yml` runs
+  `scripts/ci-watchdog.sh` every 15 minutes to rerun jobs GitHub never gave a macOS runner.
 
 ## Data
 `~/Library/Application Support/FaceOrb/`: `library.json` (photos, face boxes, 128-d signatures,
