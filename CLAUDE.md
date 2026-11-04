@@ -20,7 +20,8 @@ face recognition, plus a local web app served by the same process. See README.md
   publishes a universal FaceOrb.zip to the rolling `app` release; `install.sh` downloads that
   (falls back to building), and prebuilt apps' Updater checks its `version.txt`. Only one job needs
   a Mac; publishing runs on Linux and only for the newest main commit. `watchdog.yml` runs
-  `scripts/ci-watchdog.sh` every 15 minutes to rerun jobs GitHub never gave a macOS runner.
+  `scripts/ci-watchdog.sh` every 15 minutes to rerun jobs GitHub never gave a macOS runner;
+  attempts 2, 4 and 6 run on `macos-15-intel` (Xcode 16), so the code must build with Swift 6.1.
 
 ## Data
 `~/Library/Application Support/FaceOrb/`: `library.json` (photos, face boxes, 128-d signatures,

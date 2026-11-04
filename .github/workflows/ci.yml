@@ -11,12 +11,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The only job that needs a Mac (GitHub's macOS runners are the ones that run out of capacity):
-  # it builds the app for Apple silicon and Intel, runs the tests, and hands the packaged app to
-  # the publish job.
+  # The only job that needs a Mac: it builds the app for Apple silicon and Intel, runs the tests,
+  # and hands the packaged app to the publish job. GitHub's Apple silicon runners are the ones that
+  # run out, so every other retry (the watchdog's) uses an Intel runner; the app is the same.
   macos:
     name: macOS app and tests
-    runs-on: macos-latest
+    runs-on: ${{ (github.run_attempt == '2' || github.run_attempt == '4' || github.run_attempt == '6') && 'macos-15-intel' || 'macos-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
