@@ -69,8 +69,34 @@ then **Compress**) and upload the .zip. Your Mac keeps a copy and finds the face
 
 Tap a photo to see it full size, swipe to go to the next one, and use the buttons at the bottom to
 say whether it's you. Your Mac does the face recognition, so it has to be on with FaceOrb running.
-The connection on your Wi-Fi isn't encrypted, so only turn phone access on at home or on other
-networks you trust. Turn it off again from the same place.
+Turn phone access off again from the same place when you're done.
+
+### Keeping phone access safe
+
+FaceOrb serves plain HTTP, so how safe the connection is depends on the network between your
+phone and your Mac. Typing the Mac's IP address yourself doesn't change that; it's only the
+address you connect to.
+
+1. **Tailscale (most secure).** With [Tailscale](https://tailscale.com) on your Mac and phone,
+   traffic between them is encrypted (WireGuard), only devices signed in to your tailnet can reach
+   the Mac, and it works away from home without opening anything on your router. The QR code shows
+   your Wi-Fi address first: scan it once on Wi-Fi, then replace the address in the link with your
+   Mac's Tailscale address (the one starting with `100.`) and keep the rest, including `?t=…`.
+2. **Home Wi-Fi (fine on a network you trust).** Only devices on your network can reach FaceOrb,
+   and they still need the key from the QR code. But the traffic isn't encrypted: any device on
+   that Wi-Fi, such as a guest's laptop or a compromised smart TV, could in principle capture your
+   photos and the key. Use a password-protected (WPA2 or WPA3) network, not a guest or open one.
+
+Never turn phone access on over coffee shop, hotel, school or office Wi-Fi, and never port-forward
+FaceOrb on your router to reach it from the internet.
+
+What protects you either way:
+
+- Phone access is off by default. While it's off, FaceOrb only listens on your Mac (127.0.0.1).
+- Each phone needs the random key in the QR code. Treat the QR code and its link like a password.
+- FaceOrb rejects requests addressed to anything but your Mac's own addresses, which stops a
+  malicious website from reaching it through your browser (DNS rebinding).
+- Face matching never leaves your Mac.
 
 ## What you can import
 
