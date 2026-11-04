@@ -51,8 +51,8 @@ fi
 
 ARCHS=()
 [[ "${FACEORB_UNIVERSAL:-}" == 1 ]] && ARCHS=(--arch arm64 --arch x86_64)
-swift build -c release "${ARCHS[@]}" --product FaceOrb
-BIN="$(swift build -c release "${ARCHS[@]}" --show-bin-path)"
+swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --product FaceOrb
+BIN="$(swift build -c release ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)"
 
 # Assembled next to the old app and swapped in at the end, so a failed build (or one started
 # from the app's own Update button) never leaves you without a working app.
