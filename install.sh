@@ -81,6 +81,9 @@ mkdir -p "$HOME/Applications"
 rm -rf "$DEST"
 ditto "$APP" "$DEST"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
+# Finder and Launchpad cache app icons by path; re-register so a new icon shows right away.
+touch "$DEST"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$DEST" 2>/dev/null || true
 
 # A `faceorb` terminal command that opens the menu bar dropdown (starting the app if needed).
 ALIAS="alias faceorb='open \"\$HOME/Applications/FaceOrb.app\" --args --show'"
