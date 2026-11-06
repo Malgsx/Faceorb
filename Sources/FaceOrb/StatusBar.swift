@@ -94,9 +94,6 @@ final class StatusBarController: NSObject {
     private var resignObserver: NSObjectProtocol?
     private var cancellables = Set<AnyCancellable>()
     private var sizeObservation: NSKeyValueObservation?
-    /// Turns the orb's reflections while FaceOrb is working (one turn every 1.5 s).
-    private var spinTimer: Timer?
-    private var spin = 0.0
 
     init(model: AppModel, updater: Updater, windows: AppWindows) {
         self.model = model
@@ -117,7 +114,7 @@ final class StatusBarController: NSObject {
             .store(in: &cancellables)
     }
 
-    deinit { MainActor.assumeIsolated { removeMonitor(); spinTimer?.invalidate() } }
+    deinit { MainActor.assumeIsolated { removeMonitor() } }
 
     private func refreshIcon() {
         let activity = model.activity
@@ -125,20 +122,7 @@ final class StatusBarController: NSObject {
         let update = updater.updateAvailable
         item.button?.image = OrbIcon.image(progress: activity.isBusy ? .some(activity.fraction) : nil,
                                            count: activity.isBusy ? 0 : count,
-                                           update: update, spin: spin)
-        let spinning = activity.isBusy && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if spinning, spinTimer == nil {
-            spinTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.spin = (self.spin + 1.0 / 30).truncatingRemainder(dividingBy: 1)
-                    self.refreshIcon()
-                }
-            }
-        } else if !spinning, let timer = spinTimer {
-            timer.invalidate()
-            spinTimer = nil
-        }
+                                           update: update)
         item.button?.setAccessibilityLabel(activity.isBusy ? activity.label
             : "FaceOrb, \(count) photos to review\(update ? ", update available" : "")")
     }

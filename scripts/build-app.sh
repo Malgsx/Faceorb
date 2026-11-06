@@ -72,7 +72,7 @@ if [[ -n "$SOURCE_VERSION" ]]; then
   plutil -insert FaceOrbSourceVersion -string "$SOURCE_VERSION" "$APP/Contents/Info.plist"
 fi
 cp "$MODEL" "$APP/Contents/Resources/"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/"
+cp Resources/AppIcon.icns Resources/MenuBarLogo.png "$APP/Contents/Resources/"
 
 # If ONNX Runtime came in as a dynamic framework, ship it inside the bundle.
 shopt -s nullglob

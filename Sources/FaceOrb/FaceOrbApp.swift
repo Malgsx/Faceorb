@@ -46,15 +46,15 @@ enum FaceOrbMain {
     }
 }
 
-/// Draws the menu bar orb: a small chrome ball whose reflections turn with `spin` (0..<1).
-/// Not a template image, so it keeps its metal shading; the badge colours are resolved when
-/// drawn (cacheMode .never), so they follow light and dark menu bars.
+/// Draws the menu bar icon: the FaceOrb logo (face in a circle) plus progress ring and badges.
+/// The colours are resolved when drawn (cacheMode .never), so they follow light and dark menu bars.
 enum OrbIcon {
     static let height: CGFloat = 18
     private static let orb: CGFloat = 16
+    private static let logo = Bundle.main.url(forResource: "MenuBarLogo", withExtension: "png").flatMap { NSImage(contentsOf: $0) }
 
     /// - progress: nil when idle; .some(nil) while busy without a known fraction; .some(f) for 0...1.
-    static func image(progress: Double??, count: Int, update: Bool, spin: Double = 0) -> NSImage {
+    static func image(progress: Double??, count: Int, update: Bool) -> NSImage {
         let text = count > 99 ? "99+" : count > 0 ? "\(count)" : nil
         let font = NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: .bold)
         let textSize = text.map { ($0 as NSString).size(withAttributes: [.font: font]) } ?? .zero
@@ -65,43 +65,17 @@ enum OrbIcon {
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             let center = CGPoint(x: 1 + orb / 2, y: height / 2)
             // Leave room for the progress ring while working.
-            let r = progress == nil ? orb / 2 - 0.5 : orb / 2 - 2.5
+            let r = progress == nil ? orb / 2 : orb / 2 - 2.5
             let ball = CGRect(x: center.x - r, y: center.y - r, width: 2 * r, height: 2 * r)
-            let space = CGColorSpaceCreateDeviceRGB()
-            func gray(_ w: CGFloat, _ a: CGFloat = 1) -> CGColor { CGColor(gray: w, alpha: a) }
-
-            ctx.saveGState()
-            ctx.addEllipse(in: ball)
-            ctx.clip()
-            // Chrome: alternating light and dark reflections around the ball, turned by `spin`.
-            let bands: [CGFloat] = [0.95, 0.45, 0.85, 0.3, 0.9, 0.5, 0.95]
-            let wedges = 72
-            for i in 0..<wedges {
-                let f = CGFloat(i) / CGFloat(wedges)
-                let pos = f * CGFloat(bands.count - 1), k = min(Int(pos), bands.count - 2), t = pos - CGFloat(k)
-                ctx.setFillColor(gray(bands[k] + (bands[k + 1] - bands[k]) * t))
-                let a0 = (f + CGFloat(spin)) * 2 * .pi, a1 = a0 + 2 * .pi / CGFloat(wedges) + 0.02
-                ctx.move(to: center)
-                ctx.addArc(center: center, radius: r + 1, startAngle: a0, endAngle: a1, clockwise: false)
-                ctx.closePath()
-                ctx.fillPath()
+            // The black line-art logo, tinted with the menu bar's text colour so it follows light and dark bars.
+            if let logo {
+                logo.draw(in: ball)
+                ctx.saveGState()
+                ctx.setBlendMode(.sourceAtop)
+                NSColor.labelColor.setFill()
+                ctx.fill(ball)
+                ctx.restoreGState()
             }
-            // Blend the reflections together in the middle, so it reads as a ball rather than a knob.
-            let core = CGGradient(colorsSpace: space, colors: [gray(0.78, 0.95), gray(0.78, 0)] as CFArray, locations: [0, 1])!
-            ctx.drawRadialGradient(core, startCenter: center, startRadius: 0, endCenter: center, endRadius: r * 0.7, options: [])
-            // Shading for a round, lit-from-top-left look.
-            let shade = CGGradient(colorsSpace: space, colors: [gray(1, 0), gray(0, 0.15), gray(0, 0.55)] as CFArray,
-                                   locations: [0, 0.6, 1])!
-            ctx.drawRadialGradient(shade, startCenter: CGPoint(x: center.x - r * 0.35, y: center.y - r * 0.4), startRadius: 0,
-                                   endCenter: center, endRadius: r, options: [])
-            let shine = CGGradient(colorsSpace: space, colors: [gray(1, 0.95), gray(1, 0)] as CFArray, locations: [0, 1])!
-            let spot = CGPoint(x: center.x - r * 0.38, y: center.y - r * 0.42)
-            ctx.drawRadialGradient(shine, startCenter: spot, startRadius: 0, endCenter: spot, endRadius: r * 0.5, options: [])
-            ctx.restoreGState()
-            // A thin dark rim keeps it visible on a light menu bar.
-            ctx.setStrokeColor(gray(0, 0.45))
-            ctx.setLineWidth(0.75)
-            ctx.strokeEllipse(in: ball.insetBy(dx: 0.375, dy: 0.375))
 
             if let progress {
                 let ring = NSBezierPath()
